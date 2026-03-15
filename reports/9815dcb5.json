@@ -1,0 +1,48 @@
+{
+  "audit_id": "9815dcb5",
+  "file": "9815dcb5_Sample Order Taking  Customer Support Philippines.mp3",
+  "audited_at": "2026-03-15T10:59:54.435309",
+  "agent_speaker": "SPEAKER_A",
+  "call_metadata": {
+    "duration_seconds": 107.8,
+    "agent_talk_ratio": 68.2,
+    "customer_talk_ratio": 31.8,
+    "total_turns": 27
+  },
+  "scores": {
+    "greeting": 9,
+    "empathy": 6,
+    "resolution": 9,
+    "communication": 8,
+    "compliance": 9,
+    "closing": 9
+  },
+  "overall_score": 8,
+  "customer_sentiment": {
+    "start": "neutral",
+    "end": "satisfied",
+    "trend": "improved"
+  },
+  "resolution_status": "resolved",
+  "compliance_passed": true,
+  "recommendation": "good",
+  "flags": [
+    "Agent talk ratio is higher than ideal (68.2%)"
+  ],
+  "strengths": [
+    "Agent was clear, polite, and professional",
+    "Agent resolved the customer's issue efficiently"
+  ],
+  "improvement_areas": [
+    "Agent could have shown more empathy towards the customer",
+    "Agent could have allowed the customer to talk more by asking open-ended questions"
+  ],
+  "call_summary": "The customer called to order a dozen red roses from Martha's Flours. The agent efficiently took the customer's order and provided a total cost and shipping time. The customer was satisfied with the service.",
+  "full_transcript": "[0.8s] Agent: Thank you for calling Martha's Flours, Town and City.\n[3.8s] Customer: Hello, I'd like to order flowers and I think you have what I'm looking for.\n[7.8s] Agent: I'd be happy to take care of your order. May I have your name, please?\n[11.1s] Customer: Randall Thomas\n[12.6s] Agent: Randall Thomas, can you spell that for me?\n[15.6s] Customer: Randal, R A N D A L, Palmer, T H O N A M.\n[22.8s] Agent: Thank you for that information, Randall. May I have your home or office number area code first?\n[27.4s] Customer: Airport 409, then 5 866, 5088.\n[34.4s] Agent: That's 409-866-5088. Do you have a fax number or email address?\n[41.2s] Customer: My email is randall.sondas@gmail.com.\n[46.9s] Agent: randall.thomas@gmail.com may have your shipping address.\n[52.0s] Customer: 6800.\n[53.2s] Agent: Okay.\n[54.4s] Customer: Badass Avenue, Beaumont, Texas, zip code is 77706.\n[61.6s] Agent: Gladys Avenue, Beaumont, Texas, zip code 77706. Thank you for the information. What products are you interested in purchasing?\n[71.2s] Customer: Red roses, probably a dozen.\n[73.9s] Agent: One dozen of red roses, do you want long stems?\n[76.6s] Customer: They're sure.\n[77.6s] Agent: Alright, Rano, let me process your order. One moment, please.\n[82.4s] Customer: Okay.\n[85.2s] Agent: Randall, you're ordering 1 dozen long stent red roses. The total amount of your order is $40, and it will be shipped to your address within 24 hours.\n[94.3s] Customer: How soon can you deliver my roses again?\n[96.9s] Agent: within 24 hours.\n[98.8s] Customer: Okay, no problem.\n[100.2s] Agent: Is there anything else I can help you with?\n[102.5s] Customer: That's all for now, thanks.\n[104.3s] Agent: No problem, Randall. Thank you for calling Martha's Flourish. Have a nice day.",
+  "client_name": "",
+  "agent_name": "",
+  "user_email": "kartiksancheti33@gmail.com",
+  "calls_used": 9,
+  "calls_limit": 50,
+  "calls_remaining": 41
+}

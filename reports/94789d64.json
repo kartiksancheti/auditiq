@@ -1,0 +1,49 @@
+{
+  "audit_id": "94789d64",
+  "file": "94789d64_audio.mp3",
+  "audited_at": "2026-03-14T18:43:40.852628",
+  "agent_speaker": "SPEAKER_B",
+  "call_metadata": {
+    "duration_seconds": 174.3,
+    "agent_talk_ratio": 35.1,
+    "customer_talk_ratio": 64.9,
+    "total_turns": 31
+  },
+  "scores": {
+    "greeting": 8,
+    "empathy": 4,
+    "resolution": 5,
+    "communication": 7,
+    "compliance": 9,
+    "closing": 6
+  },
+  "overall_score": 6,
+  "customer_sentiment": {
+    "start": "frustrated",
+    "end": "angry",
+    "trend": "worsened"
+  },
+  "resolution_status": "escalated",
+  "compliance_passed": true,
+  "recommendation": "coaching_needed",
+  "flags": [
+    "Lack of empathy at 97.9s",
+    "Unauthorized promise attempt at 153.5s"
+  ],
+  "strengths": [
+    "Clear explanation of the service upgrade",
+    "Adherence to company policies"
+  ],
+  "improvement_areas": [
+    "Show more empathy towards customer concerns",
+    "Improve communication to avoid misunderstandings"
+  ],
+  "call_summary": "The customer called to inquire about a $5 charge on their recent bill, which was explained as a service upgrade. The customer was not satisfied with the explanation and requested to speak to a supervisor, eventually asking to cancel their service.",
+  "full_transcript": "[0.2s] SPEAKER_A: Hi. Thank you for calling StarNet customer service. This is Claire. How may I help you today? Hi. This is Samantha. I'm a bit confused by a $5 charge on my recent bill and wanna know what it's for.\n[11.8s] SPEAKER_B: I'll be happy to help. May I have your email and full name?\n[15.2s] SPEAKER_A: Sam@aol.com.\n[17.2s] SPEAKER_A: Samantha Jones. I've been with you for about five years now, and this is the first time I've encountered this.\n[24.6s] SPEAKER_B: Just one moment, Samantha. Let me pull up your account first.\n[28.9s] SPEAKER_A: Fine.\n[32.6s] SPEAKER_A: K.\n[35.5s] SPEAKER_B: Alright. I see the charge. It's associated with a service upgrade.\n[39.8s] SPEAKER_B: It shows here that you've opted in for automatic upgrade. And with this upgrade, you get a new user interface and an additional storage of 30 gigabytes. Okay. I do remember opting in for updates and such, but I was under the impression that any major changes, especially those involving charges,\n[56.5s] SPEAKER_A: would be communicated to me in advance.\n[61.0s] SPEAKER_B: Well, it was communicated to you in advance. We sent you an email last Friday,\n[65.7s] SPEAKER_B: and we informed you about the upgrade, and then we rolled it out last Tuesday. You might wanna check your email for this.\n[72.1s] SPEAKER_A: I certainly don't recall seeing any notification about this. This was quite a surprise.\n[77.4s] SPEAKER_B: Well, did you check your spam folder? Because it's it's not uncommon to miss these kinds of emails. And as I mentioned, you did opt in for upgrades, so the system just followed your settings.\n[87.5s] SPEAKER_A: I understand the system followed my settings,\n[90.0s] SPEAKER_A: but it's the lack of clear communication I'm concerned about. Can I speak to a supervisor to understand this better?\n[97.9s] SPEAKER_B: What kind of clear communication do you prefer? You opted in for an automatic upgrade, so I assume you're already you're already aware of this. Right?\n[105.7s] SPEAKER_A: Yes. But I thought it would be free, or at least send me an email first before charging me.\n[111.7s] SPEAKER_B: We don't do that. If you sign up for an automatic upgrade, then that is a paid feature, which means it'll automatically\n[117.7s] SPEAKER_B: charge you.\n[119.1s] SPEAKER_A: Otherwise, you you need to disable that setting on your account. Well, I get that now. I still wanna talk to a supervisor.\n[126.8s] SPEAKER_B: I can do that, but I doubt the supervisor is gonna give you a different explanation.\n[131.4s] SPEAKER_B: But if you insist, I can take down a request.\n[134.5s] SPEAKER_A: I'd like that. I'd like to discuss this further.\n[139.0s] SPEAKER_B: Okay. I will\n[140.7s] SPEAKER_B: put in the request for a supervisor to call you back.\n[144.2s] SPEAKER_B: Otherwise, I suggest checking your email to avoid surprises in the future.\n[148.6s] SPEAKER_A: You know what? Why don't you just transfer me to the cancellation department?\n[153.5s] SPEAKER_B: Okay. I'm sorry for the misunderstanding, but but if you want, I can I can have the $5 charge reimbursed to you? You also have that option. What do you say? No, honey. It was never about the charge. Just cancel my service, please.\n[168.1s] SPEAKER_B: I understand. Okay. To cancel the service, I will now transfer you to the appropriate department. Hold on.\n[173.8s] SPEAKER_A: Okay.",
+  "client_name": "abc",
+  "agent_name": "cvf",
+  "user_email": "kartiksancheti33@gmail.com",
+  "calls_used": 2,
+  "calls_limit": 50,
+  "calls_remaining": 48
+}

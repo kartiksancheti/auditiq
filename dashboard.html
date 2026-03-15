@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditIQ Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+.header { background: #1a1a2e; color: white; padding: 16px 30px; display: flex; align-items: center; justify-content: space-between; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 18px; font-weight: 700; color: white; }
+.logo span { color: #00E5A0; }
+.badge { background: #e94560; color: white; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-email { font-size: 13px; color: #6B7A99; }
+#usagePill { display: none; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #1E2D45; color: #aaa; }
+#usagePill.warn { background: rgba(255,184,0,0.2); color: #FFB800; }
+#usagePill.danger { background: rgba(255,64,96,0.2); color: #FF4060; }
+.logout-btn { background: none; border: 1px solid #333; color: #777; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.logout-btn:hover { border-color: #FF4060; color: #FF4060; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.alert { padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 500; margin-bottom: 20px; display: none; }
+.alert.yellow { background: #fff8e1; border: 1px solid #ffc107; color: #856404; }
+.wall { background: white; border-radius: 16px; padding: 60px 40px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 20px; display: none; }
+.wall h2 { font-size: 22px; color: #333; margin: 16px 0 8px; }
+.wall p { color: #888; margin-bottom: 24px; }
+.wall a { background: #00E5A0; color: #000; padding: 13px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 15px; display: inline-block; }
+.card { background: white; border-radius: 12px; padding: 28px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 15px; color: #555; font-weight: 600; margin-bottom: 20px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.fg { display: flex; flex-direction: column; gap: 6px; }
+.fg label { font-size: 13px; color: #666; font-weight: 500; }
+.fg input { border: 1px solid #ddd; border-radius: 8px; padding: 10px 14px; font-size: 14px; outline: none; }
+.fg input:focus { border-color: #e94560; }
+.drop-zone { border: 2px dashed #ddd; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; }
+.drop-zone:hover { border-color: #e94560; background: #fff5f7; }
+.drop-zone p { color: #888; font-size: 13px; margin-top: 8px; }
+.btn { background: #e94560; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600; margin-top: 14px; transition: background 0.2s; }
+.btn:hover { background: #c73652; }
+.btn:disabled { background: #ccc; cursor: not-allowed; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.stat-card { background: white; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.stat-card .num { font-size: 30px; font-weight: 700; color: #1a1a2e; }
+.stat-card .lbl { font-size: 12px; color: #888; margin-top: 4px; }
+.reports-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; }
+.reports-card h2 { padding: 18px 24px; border-bottom: 1px solid #f0f0f0; font-size: 15px; color: #555; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #f8f9fa; padding: 11px 16px; text-align: left; font-size: 11px; color: #888; text-transform: uppercase; }
+td { padding: 13px 16px; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+tr:hover td { background: #fafafa; }
+.sb { display: inline-block; padding: 3px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+.sh { background: #e8f5e9; color: #2e7d32; }
+.sm { background: #fff8e1; color: #f57f17; }
+.sl { background: #fce4ec; color: #c62828; }
+.rb { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; }
+.re { background: #e8f5e9; color: #2e7d32; }
+.rg { background: #e3f2fd; color: #1565c0; }
+.rc { background: #fff8e1; color: #f57f17; }
+.rr { background: #fce4ec; color: #c62828; }
+.cy { color: #2e7d32; font-weight: 600; }
+.cn { color: #c62828; font-weight: 600; }
+.vb { background: none; border: 1px solid #ddd; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #555; }
+.vb:hover { border-color: #e94560; color: #e94560; }
+.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; overflow-y: auto; }
+.modal.open { display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+.modal-content { background: white; border-radius: 16px; padding: 30px; max-width: 700px; width: 100%; position: relative; }
+.close-btn { position: absolute; top: 16px; right: 20px; background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
+.scores-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.score-item { background: #f8f9fa; border-radius: 8px; padding: 14px; text-align: center; }
+.score-item .val { font-size: 24px; font-weight: 700; }
+.score-item .name { font-size: 12px; color: #888; margin-top: 4px; }
+.sec { font-size: 12px; font-weight: 600; color: #555; margin: 16px 0 8px; text-transform: uppercase; }
+.transcript-box { background: #f8f9fa; border-radius: 8px; padding: 16px; max-height: 250px; overflow-y: auto; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.flag-item { background: #fff3cd; border-left: 3px solid #ffc107; padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+.str-item { background: #d4edda; border-left: 3px solid #28a745; padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+.loading { display: none; padding: 12px 0; color: #888; font-size: 14px; }
+.loading.show { display: block; }
+.toast { position: fixed; bottom: 30px; right: 30px; background: #1a1a2e; color: white; padding: 14px 20px; border-radius: 10px; font-size: 14px; z-index: 200; transform: translateY(120px); transition: transform 0.3s; max-width: 320px; }
+.toast.show { transform: translateY(0); }
+.login-prompt { background: white; border-radius: 16px; padding: 60px 40px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.login-prompt h2 { font-size: 22px; color: #333; margin-bottom: 8px; }
+.login-prompt p { color: #888; font-size: 15px; margin-bottom: 28px; }
+.login-prompt a { background: #00E5A0; color: #000; padding: 14px 32px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 15px; display: inline-block; }
+@media (max-width: 768px) {
+  .header { padding: 14px 16px; }
+  .user-email { display: none; }
+  .container { padding: 14px; }
+  .form-row { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .scores-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="logo">Audit<span>IQ</span></div>
+    <span class="badge">Dashboard</span>
+  </div>
+  <div class="header-right">
+    <span class="user-email" id="userEmail"></span>
+    <span id="usagePill"></span>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="alert yellow" id="alertYellow"></div>
+  <div class="wall" id="upgradeWall">
+    <div style="font-size:48px">🚫</div>
+    <h2>Trial Limit Reached</h2>
+    <p>You've used all 50 free trial calls. Upgrade to continue.</p>
+    <a href="https://auditiq.nxtautomation.online/#pricing">Upgrade Now</a>
+  </div>
+  <div id="loginPrompt" style="display:none" class="login-prompt">
+    <div style="font-size:52px;margin-bottom:16px">🔐</div>
+    <h2>Sign in to access your dashboard</h2>
+    <p>Your audit reports are private and linked to your account.</p>
+    <a href="/login">Sign In / Sign Up</a>
+  </div>
+  <div id="mainContent">
+    <div class="card" id="singleCard">
+      <h2>🎙️ Audit a Call</h2>
+      <div class="form-row">
+        <div class="fg"><label>Client Name</label><input type="text" id="clientName" placeholder="e.g. HDFC Bank BPO"></div>
+        <div class="fg"><label>Agent Name</label><input type="text" id="agentName" placeholder="e.g. Rahul Sharma"></div>
+      </div>
+      <div class="fg">
+        <label>Audio File</label>
+        <div class="drop-zone" onclick="document.getElementById('audioFile').click()">
+          <div style="font-size:32px">🎵</div>
+          <strong id="fileLabel">Click to select audio file</strong>
+          <p>Supports MP3, WAV, M4A, OGG</p>
+          <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg" style="display:none" onchange="document.getElementById('fileLabel').textContent = this.files[0] ? this.files[0].name : 'Click to select audio file'">
+        </div>
+      </div>
+      <button class="btn" onclick="submitAudit()" id="auditBtn">🔍 Audit Call</button>
+      <div class="loading" id="loading">⏳ Transcribing and analyzing... this may take 30-60 seconds.</div>
+    </div>
+
+    <div class="card" style="display:none" >
+      <h2>📦 Batch Audit (Multiple Calls)</h2>
+      <div class="form-row">
+        <div class="fg"><label>Client Name</label><input type="text" id="batchClientName" placeholder="e.g. HDFC Bank BPO"></div>
+      </div>
+      <div class="fg">
+        <label>Audio Files</label>
+        <div class="drop-zone" onclick="document.getElementById('batchFiles').click()">
+          <div style="font-size:32px">📂</div>
+          <strong id="batchLabel">Click to select multiple audio files</strong>
+          <p>Hold Ctrl/Cmd to select multiple</p>
+          <input type="file" id="batchFiles" accept=".mp3,.wav,.m4a,.ogg" multiple style="display:none" onchange="document.getElementById('batchLabel').textContent = this.files.length + ' file(s) selected'">
+        </div>
+      </div>
+      <button class="btn" onclick="submitBatch()" id="batchBtn">📦 Audit All</button>
+      <div class="loading" id="batchLoading">⏳ Processing batch...</div>
+      <div id="batchProgress" style="margin-top:12px;font-size:14px;color:#555"></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card"><div class="num" id="sTotalCalls">-</div><div class="lbl">Total Calls Audited</div></div>
+      <div class="stat-card"><div class="num" id="sAvgScore">-</div><div class="lbl">Average Score</div></div>
+      <div class="stat-card"><div class="num" id="sFlagged">-</div><div class="lbl">Flagged Calls</div></div>
+      <div class="stat-card"><div class="num" id="sCompliance">-</div><div class="lbl">Compliance Rate</div></div>
+    </div>
+
+    <div class="reports-card">
+      <h2>📋 Audit Reports</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>File</th><th>Agent</th><th>Score</th><th>Sentiment</th><th>Compliance</th><th>Recommendation</th><th>Date</th><th></th></tr></thead>
+          <tbody id="reportsBody"><tr><td colspan="8" style="text-align:center;color:#888;padding:40px">No audits yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <button class="close-btn" onclick="closeModal()">&#x2715;</button>
+    <h2 id="modalTitle">Audit Report</h2>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let currentUser = null;
+
+async function boot() {
+  // Check for token in URL (from Google OAuth)
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('token');
+  if (urlToken) {
+    localStorage.setItem('auditiq_session', urlToken);
+    window.history.replaceState({}, '', '/dashboard');
+  }
+  const token = localStorage.getItem('auditiq_session');
+  if (!token) {
+    document.getElementById('loginPrompt').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+    document.getElementById('upgradeWall').style.display = 'none';
+    return;
+  }
+  try {
+    const res = await fetch('/auth/me', {headers: {'X-Session-Token': token}});
+    if (res.ok) {
+      currentUser = await res.json();
+      document.getElementById('userEmail').textContent = currentUser.email;
+      updateUsagePill(currentUser);
+      const used = currentUser.calls_used || 0;
+      const limit = currentUser.calls_limit || 50;
+      if (used >= limit) {
+        document.getElementById('upgradeWall').style.display = 'block';
+        document.getElementById('mainContent').style.display = 'none';
+      } else {
+        document.getElementById('upgradeWall').style.display = 'none';
+        document.getElementById('mainContent').style.display = 'block';
+        if (used >= 40) {
+          const el = document.getElementById('alertYellow');
+          el.style.display = 'block';
+          el.innerHTML = '&#9888;&#65039; <strong>Warning:</strong> Only ' + (limit - used) + ' trial calls remaining. <a href="https://auditiq.nxtautomation.online/#pricing" style="color:#856404;font-weight:700">Upgrade now</a>';
+        }
+      }
+      loadReports();
+    } else {
+      document.getElementById('loginPrompt').style.display = 'block';
+      document.getElementById('mainContent').style.display = 'none';
+      document.getElementById('upgradeWall').style.display = 'none';
+    }
+  } catch(e) {
+    document.getElementById('loginPrompt').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+    document.getElementById('upgradeWall').style.display = 'none';
+  }
+}
+
+function updateUsagePill(user) {
+  const pill = document.getElementById('usagePill');
+  const used = user.calls_used || 0;
+  const limit = user.calls_limit || 50;
+  pill.style.display = 'inline-block';
+  pill.textContent = (limit - used) + ' calls left';
+  pill.className = used >= limit ? 'danger' : used >= 40 ? 'warn' : '';
+}
+
+function logout() {
+  localStorage.removeItem('auditiq_session');
+  window.location.href = '/login';
+}
+
+async function submitAudit() {
+  const fileInput = document.getElementById('audioFile');
+  if (!fileInput.files[0]) { showToast('Please select an audio file'); return; }
+  const btn = document.getElementById('auditBtn');
+  const loading = document.getElementById('loading');
+  btn.disabled = true;
+  loading.classList.add('show');
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('client_name', document.getElementById('clientName').value);
+  fd.append('agent_name', document.getElementById('agentName').value);
+  try {
+    const res = await fetch('/audit', { method: 'POST', body: fd, headers: {'X-Session-Token': localStorage.getItem('auditiq_session') || ''}});
+    const report = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) { window.location.href = '/login'; return; }
+      if (res.status === 403) {
+        document.getElementById('upgradeWall').style.display = 'block';
+        document.getElementById('mainContent').style.display = 'none';
+      }
+      throw new Error(report.detail || 'Audit failed');
+    }
+    if (report.calls_used !== undefined) {
+      currentUser.calls_used = report.calls_used;
+      updateUsagePill(currentUser);
+    }
+    showToast('Audit complete! Score: ' + report.overall_score + '/10');
+    loadReports();
+    showModal(report);
+  } catch(e) {
+    showToast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    loading.classList.remove('show');
+  }
+}
+
+async function submitBatch() {
+  const files = document.getElementById('batchFiles').files;
+  if (!files.length) { showToast('Please select audio files'); return; }
+  const btn = document.getElementById('batchBtn');
+  const loading = document.getElementById('batchLoading');
+  const progress = document.getElementById('batchProgress');
+  btn.disabled = true;
+  loading.classList.add('show');
+  progress.textContent = 'Uploading ' + files.length + ' files...';
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  fd.append('client_name', document.getElementById('batchClientName').value);
+  try {
+    const res = await fetch('/audit/batch', { method: 'POST', body: fd, headers: {'X-Session-Token': localStorage.getItem('auditiq_session') || ''}});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Batch failed');
+    const ok = data.results.filter(function(r) { return r.status === 'success'; }).length;
+    const fail = data.results.filter(function(r) { return r.status === 'failed'; }).length;
+    progress.textContent = ok + ' audited' + (fail ? ', ' + fail + ' failed' : '');
+    showToast('Batch done! ' + ok + '/' + files.length + ' audited');
+    loadReports();
+  } catch(e) {
+    showToast('Error: ' + e.message);
+    progress.textContent = '';
+  } finally {
+    btn.disabled = false;
+    loading.classList.remove('show');
+  }
+}
+
+async function loadReports() {
+  try {
+    const res = await fetch('/reports', {headers: {'X-Session-Token': localStorage.getItem('auditiq_session') || ''}});
+    const data = await res.json();
+    const reports = data.reports || [];
+    const tbody = document.getElementById('reportsBody');
+    if (!tbody) return;
+    if (reports.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;padding:40px">No audits yet.</td></tr>';
+      return;
+    }
+    document.getElementById('sTotalCalls').textContent = reports.length;
+    const avg = reports.reduce(function(s, r) { return s + (r.overall_score || 0); }, 0) / reports.length;
+    document.getElementById('sAvgScore').textContent = avg.toFixed(1);
+    document.getElementById('sFlagged').textContent = reports.filter(function(r) { return r.recommendation === 'critical_review' || r.recommendation === 'coaching_needed'; }).length;
+    const compliantPct = Math.round(reports.filter(function(r) { return r.compliance_passed; }).length / reports.length * 100);
+    document.getElementById('sCompliance').textContent = compliantPct + '%';
+    var rows = '';
+    for (var i = 0; i < reports.length; i++) {
+      var r = reports[i];
+      var s = r.overall_score || 0;
+      var sc = s >= 8 ? 'sh' : s >= 6 ? 'sm' : 'sl';
+      var recMap = { excellent: 're', good: 'rg', coaching_needed: 'rc', critical_review: 'rr' };
+      var rc = recMap[r.recommendation] || '';
+      var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
+      var sent = (r.customer_sentiment && r.customer_sentiment.start) ? r.customer_sentiment.start + ' to ' + r.customer_sentiment.end : '-';
+      var comp = r.compliance_passed ? '<span class="cy">Pass</span>' : '<span class="cn">Fail</span>';
+      var rec = (r.recommendation || '').replace('_', ' ');
+      rows += '<tr>';
+      rows += '<td>' + (r.file || '-') + '</td>';
+      rows += '<td>' + (r.agent_name || '-') + '</td>';
+      rows += '<td><span class="sb ' + sc + '">' + s + '/10</span></td>';
+      rows += '<td style="font-size:12px">' + sent + '</td>';
+      rows += '<td>' + comp + '</td>';
+      rows += '<td><span class="rb ' + rc + '">' + rec + '</span></td>';
+      rows += '<td>' + date + '</td>';
+      rows += '<td><button class="vb" data-id="' + r.audit_id + '" onclick="viewReport(this.getAttribute(\'data-id\'))">View</button></td>';
+      rows += '</tr>';
+    }
+    tbody.innerHTML = rows;
+  } catch(e) {
+    console.error('loadReports error:', e);
+  }
+}
+
+async function viewReport(id) {
+  const res = await fetch('/reports/' + id, {headers: {'X-Session-Token': localStorage.getItem('auditiq_session') || ''}});
+  if (!res.ok) { showToast('Report not found'); return; }
+  showModal(await res.json());
+}
+
+function showModal(report) {
+  var scores = report.scores || {};
+  var sentiment = report.customer_sentiment || {};
+  document.getElementById('modalTitle').textContent = 'Audit: ' + (report.file || report.audit_id || '');
+  var html = '<p style="color:#888;margin-bottom:16px">' + (report.call_summary || '') + '</p>';
+  html += '<div class="scores-grid">';
+  for (var key in scores) {
+    var v = scores[key];
+    var color = v >= 8 ? '#2e7d32' : v >= 6 ? '#f57f17' : '#c62828';
+    html += '<div class="score-item"><div class="val" style="color:' + color + '">' + v + '/10</div><div class="name">' + key.charAt(0).toUpperCase() + key.slice(1) + '</div></div>';
+  }
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">';
+  html += '<div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center"><div style="font-weight:600">' + (sentiment.start || '-') + ' to ' + (sentiment.end || '-') + '</div><div style="font-size:12px;color:#888">Sentiment</div></div>';
+  html += '<div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center"><div style="font-weight:600">' + (report.resolution_status || '-') + '</div><div style="font-size:12px;color:#888">Resolution</div></div>';
+  var compColor = report.compliance_passed ? '#2e7d32' : '#c62828';
+  var compText = report.compliance_passed ? 'Passed' : 'Failed';
+  html += '<div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center"><div style="font-weight:600;color:' + compColor + '">' + compText + '</div><div style="font-size:12px;color:#888">Compliance</div></div>';
+  html += '</div>';
+  if (report.flags && report.flags.length) {
+    html += '<div class="sec">Flags</div>';
+    for (var i = 0; i < report.flags.length; i++) html += '<div class="flag-item">' + report.flags[i] + '</div>';
+  }
+  if (report.strengths && report.strengths.length) {
+    html += '<div class="sec">Strengths</div>';
+    for (var i = 0; i < report.strengths.length; i++) html += '<div class="str-item">' + report.strengths[i] + '</div>';
+  }
+  if (report.improvement_areas && report.improvement_areas.length) {
+    html += '<div class="sec">Coaching Areas</div><ul style="padding-left:18px;font-size:14px;line-height:2">';
+    for (var i = 0; i < report.improvement_areas.length; i++) html += '<li>' + report.improvement_areas[i] + '</li>';
+    html += '</ul>';
+  }
+  if (report.full_transcript) {
+    html += '<div class="sec">Transcript</div><div class="transcript-box" style="white-space:pre-wrap">' + report.full_transcript + '</div>';
+  }
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 4000);
+}
+
+boot();
+setInterval(loadReports, 30000);
+</script>
+</body>
+</html>

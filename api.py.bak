@@ -1,0 +1,493 @@
+import os, json, uuid, asyncio
+from pathlib import Path
+from datetime import datetime
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Cookie
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+from auth import (create_or_get_user, create_magic_token, get_user_by_token,
+                  create_session_token, verify_session_token, check_call_limit,
+                  increment_call_count, send_magic_link)
+
+load_dotenv()
+from auditor import audit_call, DEFAULT_CRITERIA
+
+app = FastAPI(title="Call Quality Auditor", version="1.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+UPLOAD_DIR = Path("uploads")
+REPORTS_DIR = Path("reports")
+UPLOAD_DIR.mkdir(exist_ok=True)
+REPORTS_DIR.mkdir(exist_ok=True)
+
+@app.post("/audit")
+async def audit_single_call(
+    file: UploadFile = File(...),
+    client_name: str = Form(default=""),
+    criteria: str = Form(default=DEFAULT_CRITERIA),
+    agent_name: str = Form(default=""),
+    session: str = Cookie(default=None),
+):
+    # Check authentication and call limit
+    user = None
+    if session:
+        user = verify_session_token(session)
+    if user:
+        limit = check_call_limit(user["email"])
+        if not limit["allowed"]:
+            raise HTTPException(403, f"Trial limit reached. You've used {limit['used']}/{limit['limit']} calls. Please upgrade at auditiq.nxtautomation.online")
+
+    if not file.filename.endswith((".mp3", ".wav", ".m4a", ".ogg")):
+        raise HTTPException(400, "Only audio files supported: mp3, wav, m4a, ogg")
+
+    file_id = str(uuid.uuid4())[:8]
+    file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    context = f"Client: {client_name}. Agent: {agent_name}." if client_name else ""
+    try:
+        report = await audit_call(str(file_path), criteria, context, save_report=False)
+    except Exception as e:
+        raise HTTPException(500, f"Audit failed: {str(e)}")
+
+    report["client_name"] = client_name
+    report["agent_name"] = agent_name
+    report["audit_id"] = file_id
+    report["user_email"] = user["email"] if user else "anonymous"
+
+    # Track usage
+    if user:
+        updated_user = increment_call_count(user["email"])
+        report["calls_used"] = updated_user["calls_used"]
+        report["calls_limit"] = updated_user["calls_limit"]
+        report["calls_remaining"] = updated_user["calls_limit"] - updated_user["calls_used"]
+        if updated_user["calls_used"] >= 40:
+            report["warning"] = f"⚠️ You've used {updated_user['calls_used']}/{updated_user['calls_limit']} trial calls. Upgrade soon!"
+
+    with open(REPORTS_DIR / f"{file_id}.json", "w") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    return JSONResponse(report)
+
+@app.post("/audit/batch")
+async def audit_batch_calls(
+    files: list[UploadFile] = File(...),
+    client_name: str = Form(default=""),
+    criteria: str = Form(default=DEFAULT_CRITERIA),
+):
+    results = []
+    for file in files:
+        file_id = str(uuid.uuid4())[:8]
+        file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+        try:
+            report = await audit_call(str(file_path), criteria, f"Client: {client_name}", save_report=False)
+            report["audit_id"] = file_id
+            report["client_name"] = client_name
+            with open(REPORTS_DIR / f"{file_id}.json", "w") as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            results.append({"file": file.filename, "audit_id": file_id, "status": "success", "score": report.get("overall_score")})
+        except Exception as e:
+            results.append({"file": file.filename, "status": "failed", "error": str(e)})
+    return {"total": len(files), "results": results}
+
+@app.get("/reports")
+async def list_reports(session: str = Cookie(default=None)):
+    user = verify_session_token(session) if session else None
+    user_email = user["email"] if user else None
+    reports = []
+    for rf in sorted(REPORTS_DIR.glob("*.json"), reverse=True):
+        with open(rf) as f:
+            data = json.load(f)
+        # Filter by user email - only show own reports
+        report_email = data.get("user_email", "anonymous")
+        if user_email and report_email != user_email:
+            continue
+        if not user_email and report_email != "anonymous":
+            continue
+        reports.append({
+            "audit_id": data.get("audit_id"),
+            "file": data.get("file"),
+            "audited_at": data.get("audited_at"),
+            "overall_score": data.get("overall_score"),
+            "recommendation": data.get("recommendation"),
+            "compliance_passed": data.get("compliance_passed"),
+            "resolution_status": data.get("resolution_status"),
+            "client_name": data.get("client_name", ""),
+            "agent_name": data.get("agent_name", ""),
+        })
+    return {"total": len(reports), "reports": reports}
+
+@app.get("/reports/{audit_id}")
+async def get_report(audit_id: str):
+    report_path = REPORTS_DIR / f"{audit_id}.json"
+    if not report_path.exists():
+        raise HTTPException(404, "Report not found")
+    with open(report_path) as f:
+        return json.load(f)
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Quality Auditor — NXT Automation</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+.header { background: #1a1a2e; color: white; padding: 20px 30px; display: flex; align-items: center; gap: 12px; }
+.header h1 { font-size: 20px; font-weight: 600; }
+.header span { background: #e94560; padding: 3px 10px; border-radius: 20px; font-size: 12px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 30px; }
+.upload-card { background: white; border-radius: 12px; padding: 30px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.upload-card h2 { font-size: 16px; margin-bottom: 20px; color: #555; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group label { font-size: 13px; color: #666; font-weight: 500; }
+.form-group input { border: 1px solid #ddd; border-radius: 8px; padding: 10px 14px; font-size: 14px; outline: none; }
+.form-group input:focus { border-color: #e94560; }
+.drop-zone { border: 2px dashed #ddd; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; }
+.drop-zone:hover { border-color: #e94560; background: #fff5f7; }
+.drop-zone p { color: #888; font-size: 14px; margin-top: 8px; }
+.btn { background: #e94560; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; margin-top: 16px; }
+.btn:hover { background: #c73652; }
+.btn:disabled { background: #ccc; cursor: not-allowed; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 30px; }
+.stat-card { background: white; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.stat-card .num { font-size: 32px; font-weight: 700; color: #1a1a2e; }
+.stat-card .label { font-size: 13px; color: #888; margin-top: 4px; }
+.reports-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; }
+.reports-card h2 { padding: 20px 24px; border-bottom: 1px solid #f0f0f0; font-size: 16px; color: #555; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #f8f9fa; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; text-transform: uppercase; }
+td { padding: 14px 16px; border-bottom: 1px solid #f5f5f5; font-size: 14px; }
+tr:hover td { background: #fafafa; }
+.score-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-weight: 600; font-size: 13px; }
+.score-high { background: #e8f5e9; color: #2e7d32; }
+.score-mid { background: #fff8e1; color: #f57f17; }
+.score-low { background: #fce4ec; color: #c62828; }
+.rec-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; }
+.rec-excellent { background: #e8f5e9; color: #2e7d32; }
+.rec-good { background: #e3f2fd; color: #1565c0; }
+.rec-coaching { background: #fff8e1; color: #f57f17; }
+.rec-critical { background: #fce4ec; color: #c62828; }
+.compliance-yes { color: #2e7d32; font-weight: 600; }
+.compliance-no { color: #c62828; font-weight: 600; }
+.view-btn { background: none; border: 1px solid #ddd; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #555; }
+.view-btn:hover { border-color: #e94560; color: #e94560; }
+.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; overflow-y: auto; }
+.modal.open { display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+.modal-content { background: white; border-radius: 16px; padding: 30px; max-width: 700px; width: 100%; position: relative; }
+.close-btn { position: absolute; top: 16px; right: 20px; background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
+.scores-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.score-item { background: #f8f9fa; border-radius: 8px; padding: 14px; text-align: center; }
+.score-item .val { font-size: 24px; font-weight: 700; }
+.score-item .name { font-size: 12px; color: #888; margin-top: 4px; }
+.section-title { font-size: 13px; font-weight: 600; color: #555; margin: 16px 0 8px; text-transform: uppercase; }
+.transcript-box { background: #f8f9fa; border-radius: 8px; padding: 16px; max-height: 250px; overflow-y: auto; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.flag-item { background: #fff3cd; border-left: 3px solid #ffc107; padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+.strength-item { background: #d4edda; border-left: 3px solid #28a745; padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+.loading { display: none; padding: 16px; color: #888; font-size: 14px; }
+.loading.show { display: block; }
+.toast { position: fixed; bottom: 30px; right: 30px; background: #1a1a2e; color: white; padding: 14px 20px; border-radius: 10px; font-size: 14px; z-index: 200; transform: translateY(100px); transition: transform 0.3s; }
+.toast.show { transform: translateY(0); }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📞 Call Quality Auditor</h1>
+  <span>NXT Automation</span>
+</div>
+<div class="container">
+  <!-- Usage Banner -->
+  <div id="usageBanner" style="display:none; margin-bottom:20px; padding:16px 20px; border-radius:12px; font-size:14px; font-weight:500;"></div>
+  <!-- Upgrade Wall -->
+  <div id="upgradeWall" style="display:none; background:white; border-radius:12px; padding:48px; text-align:center; margin-bottom:20px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size:48px; margin-bottom:16px;">🚫</div>
+    <h2 style="color:#333; margin-bottom:8px;">Trial Limit Reached</h2>
+    <p style="color:#888; margin-bottom:24px;">You've used all 50 free trial calls. Upgrade to continue auditing.</p>
+    <a href="https://auditiq.nxtautomation.online/#pricing" style="background:#00b894; color:white; padding:14px 32px; border-radius:8px; font-weight:600; text-decoration:none; font-size:15px;">Upgrade Now →</a>
+  </div>
+  <div class="upload-card">
+    <h2>🎙️ Audit a Call</h2>
+    <div class="form-row">
+      <div class="form-group"><label>Client Name</label><input type="text" id="clientName" placeholder="e.g. HDFC Bank BPO"></div>
+      <div class="form-group"><label>Agent Name</label><input type="text" id="agentName" placeholder="e.g. Rahul Sharma"></div>
+    </div>
+    <div class="form-group">
+      <label>Audio File</label>
+      <div class="drop-zone" onclick="document.getElementById('audioFile').click()">
+        <div style="font-size:32px">🎵</div>
+        <strong id="fileLabel">Click to select audio file</strong>
+        <p>Supports MP3, WAV, M4A, OGG</p>
+        <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg" style="display:none" onchange="updateFileLabel(this)">
+      </div>
+    </div>
+    <button class="btn" onclick="submitAudit()" id="auditBtn">🔍 Audit Call</button>
+    <div class="loading" id="loading">⏳ Transcribing and analyzing... this may take 30-60 seconds.</div>
+  </div>
+  <!-- Batch Upload Card -->
+  <div class="upload-card">
+    <h2>📦 Batch Audit (Multiple Calls)</h2>
+    <div class="form-row">
+      <div class="form-group"><label>Client Name</label><input type="text" id="batchClientName" placeholder="e.g. HDFC Bank BPO"></div>
+    </div>
+    <div class="form-group">
+      <label>Audio Files (select multiple)</label>
+      <div class="drop-zone" onclick="document.getElementById('batchFiles').click()">
+        <div style="font-size:32px">📂</div>
+        <strong id="batchFileLabel">Click to select multiple audio files</strong>
+        <p>Hold Ctrl/Cmd to select multiple files</p>
+        <input type="file" id="batchFiles" accept=".mp3,.wav,.m4a,.ogg" multiple style="display:none" onchange="updateBatchLabel(this)">
+      </div>
+    </div>
+    <button class="btn" onclick="submitBatch()" id="batchBtn">📦 Audit All Calls</button>
+    <div class="loading" id="batchLoading">⏳ Processing batch... please wait, this may take several minutes.</div>
+    <div id="batchProgress" style="margin-top:16px;font-size:14px;color:#555"></div>
+  </div>
+  <div class="stats">
+    <div class="stat-card"><div class="num" id="totalCalls">-</div><div class="label">Total Calls Audited</div></div>
+    <div class="stat-card"><div class="num" id="avgScore">-</div><div class="label">Average Score</div></div>
+    <div class="stat-card"><div class="num" id="flaggedCalls">-</div><div class="label">Flagged Calls</div></div>
+    <div class="stat-card"><div class="num" id="complianceRate">-</div><div class="label">Compliance Rate</div></div>
+  </div>
+  <div class="reports-card">
+    <h2>📋 Audit Reports</h2>
+    <table>
+      <thead><tr><th>File</th><th>Agent</th><th>Score</th><th>Sentiment</th><th>Compliance</th><th>Recommendation</th><th>Date</th><th></th></tr></thead>
+      <tbody id="reportsBody"><tr><td colspan="8" style="text-align:center;color:#888;padding:40px">No audits yet. Upload a call to get started.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <button class="close-btn" onclick="closeModal()">✕</button>
+    <h2 id="modalTitle">Audit Report</h2>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function updateFileLabel(input) { document.getElementById('fileLabel').textContent = input.files[0]?.name || 'Click to select audio file'; }
+async function submitAudit() {
+  const file = document.getElementById('audioFile').files[0];
+  if (!file) { showToast('Please select an audio file'); return; }
+  const btn = document.getElementById('auditBtn');
+  const loading = document.getElementById('loading');
+  btn.disabled = true; loading.classList.add('show');
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('client_name', document.getElementById('clientName').value);
+  formData.append('agent_name', document.getElementById('agentName').value);
+  try {
+    const res = await fetch('/audit', { method: 'POST', body: formData });
+    const report = await res.json();
+    if (!res.ok) throw new Error(report.detail || 'Audit failed');
+    showToast('✅ Audit complete! Score: ' + report.overall_score + '/10');
+  // Show usage banner
+  if (report.calls_used !== undefined) {
+    const used = report.calls_used;
+    const limit = report.calls_limit;
+    const remaining = report.calls_remaining;
+    const banner = document.getElementById('usageBanner');
+    const upgradeWall = document.getElementById('upgradeWall');
+    if (used >= limit) {
+      banner.style.display = 'none';
+      upgradeWall.style.display = 'block';
+      document.querySelector('.upload-card').style.display = 'none';
+    } else if (used >= 40) {
+      banner.style.display = 'block';
+      banner.style.background = '#fff3cd';
+      banner.style.border = '1px solid #ffc107';
+      banner.style.color = '#856404';
+      banner.innerHTML = '⚠️ <strong>Warning:</strong> You have used ' + used + '/' + limit + ' trial calls. Only ' + remaining + ' calls remaining. <a href="https://auditiq.nxtautomation.online/#pricing" style="color:#856404; font-weight:700;">Upgrade now →</a>';
+    } else {
+      banner.style.display = 'block';
+      banner.style.background = '#e8f5e9';
+      banner.style.border = '1px solid #4caf50';
+      banner.style.color = '#2e7d32';
+      banner.innerHTML = '✅ <strong>' + remaining + ' trial calls remaining</strong> (' + used + '/' + limit + ' used)';
+    }
+  }
+    loadReports(); showModal(report);
+  } catch (e) { showToast('❌ Error: ' + e.message); }
+  finally { btn.disabled = false; loading.classList.remove('show'); }
+}
+async function loadReports() {
+  const res = await fetch('/reports');
+  const data = await res.json();
+  const reports = data.reports || [];
+  document.getElementById('totalCalls').textContent = reports.length;
+  if (reports.length > 0) {
+    const avg = reports.reduce((s, r) => s + (r.overall_score || 0), 0) / reports.length;
+    document.getElementById('avgScore').textContent = avg.toFixed(1);
+    document.getElementById('flaggedCalls').textContent = reports.filter(r => r.recommendation === 'critical_review' || r.recommendation === 'coaching_needed').length;
+    const compliant = reports.filter(r => r.compliance_passed).length;
+    document.getElementById('complianceRate').textContent = Math.round(compliant / reports.length * 100) + '%';
+  }
+  const tbody = document.getElementById('reportsBody');
+  if (reports.length === 0) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;padding:40px">No audits yet.</td></tr>'; return; }
+  tbody.innerHTML = reports.map(r => {
+    const score = r.overall_score || 0;
+    const sc = score >= 8 ? 'score-high' : score >= 6 ? 'score-mid' : 'score-low';
+    const rc = {excellent:'rec-excellent',good:'rec-good',coaching_needed:'rec-coaching',critical_review:'rec-critical'}[r.recommendation] || '';
+    const date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
+    const sent = r.customer_sentiment ? `${r.customer_sentiment.start} → ${r.customer_sentiment.end}` : '-';
+    return `<tr>
+      <td>${r.file||'-'}</td><td>${r.agent_name||'-'}</td>
+      <td><span class="score-badge ${sc}">${score}/10</span></td>
+      <td style="font-size:12px">${sent}</td>
+      <td class="${r.compliance_passed?'compliance-yes':'compliance-no'}">${r.compliance_passed?'✅ Pass':'❌ Fail'}</td>
+      <td><span class="rec-badge ${rc}">${(r.recommendation||'').replace('_',' ')}</span></td>
+      <td>${date}</td>
+      <td><button class="view-btn" onclick="viewReport('${r.audit_id}')">View</button></td>
+    </tr>`;
+  }).join('');
+}
+async function viewReport(id) {
+  const res = await fetch('/reports/' + id);
+  showModal(await res.json());
+}
+function showModal(report) {
+  const scores = report.scores || {};
+  const sentiment = report.customer_sentiment || {};
+  document.getElementById('modalTitle').textContent = `Audit: ${report.file || report.audit_id}`;
+  document.getElementById('modalBody').innerHTML = `
+    <p style="color:#888;margin-bottom:16px">${report.call_summary||''}</p>
+    <div class="scores-grid">${Object.entries(scores).map(([k,v])=>`
+      <div class="score-item">
+        <div class="val" style="color:${v>=8?'#2e7d32':v>=6?'#f57f17':'#c62828'}">${v}/10</div>
+        <div class="name">${k.charAt(0).toUpperCase()+k.slice(1)}</div>
+      </div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-weight:600">${sentiment.start||'-'} → ${sentiment.end||'-'}</div>
+        <div style="font-size:12px;color:#888">Customer Sentiment</div>
+      </div>
+      <div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-weight:600">${report.resolution_status||'-'}</div>
+        <div style="font-size:12px;color:#888">Resolution</div>
+      </div>
+      <div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-weight:600;color:${report.compliance_passed?'#2e7d32':'#c62828'}">${report.compliance_passed?'✅ Passed':'❌ Failed'}</div>
+        <div style="font-size:12px;color:#888">Compliance</div>
+      </div>
+    </div>
+    ${report.flags?.length?`<div class="section-title">⚠️ Flags</div>${report.flags.map(f=>`<div class="flag-item">${f}</div>`).join('')}`:''}
+    ${report.strengths?.length?`<div class="section-title">💪 Strengths</div>${report.strengths.map(s=>`<div class="strength-item">${s}</div>`).join('')}`:''}
+    ${report.improvement_areas?.length?`<div class="section-title">📈 Coaching Areas</div><ul style="padding-left:18px;font-size:14px;line-height:2">${report.improvement_areas.map(a=>`<li>${a}</li>`).join('')}</ul>`:''}
+    ${report.full_transcript?`<div class="section-title">📝 Transcript</div><div class="transcript-box">${report.full_transcript}</div>`:''}
+  `;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+loadReports();
+setInterval(loadReports, 30000);
+function updateBatchLabel(input) {
+  const count = input.files.length;
+  document.getElementById('batchFileLabel').textContent = count > 0 ? `${count} file(s) selected` : 'Click to select multiple audio files';
+}
+
+async function submitBatch() {
+  const files = document.getElementById('batchFiles').files;
+  if (!files.length) { showToast('Please select audio files'); return; }
+  const btn = document.getElementById('batchBtn');
+  const loading = document.getElementById('batchLoading');
+  const progress = document.getElementById('batchProgress');
+  btn.disabled = true;
+  loading.classList.add('show');
+  progress.textContent = `Uploading ${files.length} files...`;
+
+  const formData = new FormData();
+  for (const file of files) formData.append('files', file);
+  formData.append('client_name', document.getElementById('batchClientName').value);
+
+  try {
+    const res = await fetch('/audit/batch', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Batch failed');
+    const success = data.results.filter(r => r.status === 'success').length;
+    const failed = data.results.filter(r => r.status === 'failed').length;
+    progress.innerHTML = `✅ <strong>${success} audited</strong> ${failed > 0 ? `❌ ${failed} failed` : ''}`;
+    showToast(`✅ Batch complete! ${success}/${files.length} calls audited`);
+    loadReports();
+  } catch (e) {
+    showToast('❌ Error: ' + e.message);
+    progress.textContent = '';
+  } finally {
+    btn.disabled = false;
+    loading.classList.remove('show');
+  }
+}
+</script>
+</body>
+</html>"""
+
+from leads import handle_new_lead, get_all_leads
+
+
+@app.post("/leads")
+async def create_lead(
+    name: str = Form(...),
+    email: str = Form(...),
+    company: str = Form(...),
+    volume: str = Form(default=""),
+    plan: str = Form(default="trial"),
+):
+    try:
+        # Save lead
+        await handle_new_lead(name, email, company, volume, plan)
+        # Create user account
+        create_or_get_user(email, name, company, plan)
+        # Generate and send magic link
+        token = create_magic_token(email)
+        await send_magic_link(email, name, token)
+        return {"success": True, "message": "Account created! Check your email for dashboard access."}
+    except Exception as e:
+        raise HTTPException(500, f"Failed: {str(e)}")
+
+# ── Auth: Verify magic link ─────────────────────────────────────────────────────
+@app.get("/auth/verify")
+async def verify_magic_link(token: str):
+    user = get_user_by_token(token)
+    if not user:
+        return HTMLResponse("<h2>❌ Link expired or invalid. Please request a new one from auditiq.nxtautomation.online</h2>")
+    session_token = create_session_token(user["email"])
+    response = RedirectResponse(url="/dashboard")
+    response.set_cookie(key="session", value=session_token, max_age=604800, httponly=True, samesite="lax")
+    return response
+
+# ── Auth: Request magic link ────────────────────────────────────────────────────
+@app.post("/auth/login")
+async def request_magic_link(email: str = Form(...)):
+    from auth import get_user_by_email
+    user = get_user_by_email(email)
+    if not user:
+        raise HTTPException(404, "No account found with this email. Please sign up first.")
+    token = create_magic_token(email)
+    await send_magic_link(email, user["name"], token)
+    return {"success": True, "message": "Magic link sent to your email"}
+
+# ── Auth: Check session ─────────────────────────────────────────────────────────
+@app.get("/auth/me")
+async def get_me(session: str = Cookie(default=None)):
+    if not session:
+        raise HTTPException(401, "Not authenticated")
+    user = verify_session_token(session)
+    if not user:
+        raise HTTPException(401, "Session expired")
+    limit_status = check_call_limit(user["email"])
+    return {**user, "limit_status": limit_status}
+
+@app.get("/")
+async def root():
+    return {"message": "Call Quality Auditor API", "dashboard": "/dashboard", "docs": "/docs"}

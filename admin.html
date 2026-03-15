@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditIQ Admin</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #080C12; color: #E8EDF5; min-height: 100vh; }
+.header { background: #0E1420; border-bottom: 1px solid #1E2D45; padding: 16px 30px; display: flex; align-items: center; justify-content: space-between; }
+.logo { font-size: 18px; font-weight: 700; color: white; }
+.logo span { color: #00E5A0; }
+.badge { background: #FF4060; color: white; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 10px; }
+.logout-btn { background: none; border: 1px solid #2A3A52; color: #6B7A99; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.logout-btn:hover { border-color: #FF4060; color: #FF4060; }
+.container { max-width: 1300px; margin: 0 auto; padding: 24px; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+.stat-card { background: #0E1420; border: 1px solid #1E2D45; border-radius: 12px; padding: 20px; }
+.stat-card .num { font-size: 32px; font-weight: 700; color: #00E5A0; }
+.stat-card .lbl { font-size: 12px; color: #6B7A99; margin-top: 4px; }
+.stat-card .sub { font-size: 11px; color: #4A5A72; margin-top: 2px; }
+.section { background: #0E1420; border: 1px solid #1E2D45; border-radius: 12px; margin-bottom: 24px; overflow: hidden; }
+.section-header { padding: 18px 24px; border-bottom: 1px solid #1E2D45; display: flex; align-items: center; justify-content: space-between; }
+.section-header h2 { font-size: 15px; font-weight: 600; }
+.export-btn { background: #1E2D45; color: #00E5A0; border: 1px solid #2A3A52; padding: 7px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.export-btn:hover { background: #2A3A52; }
+.search-bar { padding: 14px 24px; border-bottom: 1px solid #1E2D45; }
+.search-bar input { width: 100%; background: #141C2E; border: 1px solid #1E2D45; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #E8EDF5; outline: none; }
+.search-bar input:focus { border-color: #00E5A0; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #0A0F1A; padding: 12px 16px; text-align: left; font-size: 11px; color: #4A5A72; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+td { padding: 13px 16px; border-bottom: 1px solid #141C2E; font-size: 13px; color: #C8D3E5; vertical-align: middle; }
+tr:hover td { background: #111825; }
+.plan-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.plan-trial { background: rgba(0,229,160,0.1); color: #00E5A0; }
+.plan-pro { background: rgba(99,102,241,0.2); color: #818CF8; }
+.plan-enterprise { background: rgba(245,158,11,0.2); color: #F59E0B; }
+.status-active { color: #00E5A0; font-weight: 600; }
+.status-inactive { color: #FF4060; font-weight: 600; }
+.usage-bar { width: 80px; height: 6px; background: #1E2D45; border-radius: 3px; display: inline-block; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.usage-fill { height: 100%; border-radius: 3px; background: #00E5A0; }
+.usage-fill.warn { background: #FFB800; }
+.usage-fill.danger { background: #FF4060; }
+.action-btn { background: none; border: 1px solid #2A3A52; color: #6B7A99; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-right: 4px; }
+.action-btn:hover { border-color: #00E5A0; color: #00E5A0; }
+.action-btn.danger:hover { border-color: #FF4060; color: #FF4060; }
+.tabs { display: flex; gap: 4px; padding: 16px 24px 0; border-bottom: 1px solid #1E2D45; }
+.ptab { padding: 10px 20px; border: none; background: none; color: #6B7A99; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
+.ptab.active { color: #00E5A0; border-bottom-color: #00E5A0; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.empty { text-align: center; padding: 48px; color: #4A5A72; font-size: 14px; }
+.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+.modal.open { display: flex; }
+.modal-box { background: #0E1420; border: 1px solid #1E2D45; border-radius: 16px; padding: 32px; width: 100%; max-width: 420px; }
+.modal-box h3 { font-size: 18px; margin-bottom: 20px; }
+.modal-box label { display: block; font-size: 13px; color: #6B7A99; margin-bottom: 6px; margin-top: 14px; }
+.modal-box select, .modal-box input[type=number] { width: 100%; background: #141C2E; border: 1px solid #1E2D45; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #E8EDF5; outline: none; }
+.modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+.modal-actions button { flex: 1; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
+.btn-save { background: #00E5A0; color: #000; }
+.btn-cancel { background: #1E2D45; color: #6B7A99; }
+.toast { position: fixed; bottom: 30px; right: 30px; background: #0E1420; border: 1px solid #1E2D45; color: white; padding: 14px 20px; border-radius: 10px; font-size: 14px; z-index: 200; transform: translateY(120px); transition: transform 0.3s; }
+.toast.show { transform: translateY(0); }
+.toast.success { border-color: #00E5A0; color: #00E5A0; }
+.toast.error { border-color: #FF4060; color: #FF4060; }
+@media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .container { padding: 14px; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="logo">Audit<span>IQ</span></div>
+    <span class="badge">Admin</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span style="font-size:13px;color:#6B7A99" id="adminEmail"></span>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="stats-grid">
+    <div class="stat-card"><div class="num" id="sTotalUsers">-</div><div class="lbl">Total Users</div><div class="sub" id="sActiveUsers">- active</div></div>
+    <div class="stat-card"><div class="num" id="sTotalAudits">-</div><div class="lbl">Total Audits</div><div class="sub">across all users</div></div>
+    <div class="stat-card"><div class="num" id="sTrialUsers">-</div><div class="lbl">Trial Users</div><div class="sub" id="sNearLimit">- near limit</div></div>
+    <div class="stat-card"><div class="num" id="sProUsers">-</div><div class="lbl">Pro / Paid</div><div class="sub">upgraded accounts</div></div>
+  </div>
+
+  <div class="section">
+    <div class="tabs">
+      <button class="ptab active" onclick="switchTab('users')">Users</button>
+      <button class="ptab" onclick="switchTab('reports')">All Reports</button>
+      <button class="ptab" onclick="switchTab('leads')">Leads</button>
+    </div>
+
+    <div class="tab-content active" id="tabUsers">
+      <div class="section-header"><h2>User Management</h2><button class="export-btn" onclick="exportCSV('users')">Export CSV</button></div>
+      <div class="search-bar"><input type="text" id="userSearch" placeholder="Search by email or company..." oninput="filterUsers()"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Email</th><th>Name</th><th>Company</th><th>Plan</th><th>Usage</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
+          <tbody id="usersBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tabReports">
+      <div class="section-header"><h2>All Audit Reports</h2><button class="export-btn" onclick="exportCSV('reports')">Export CSV</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>User</th><th>File</th><th>Agent</th><th>Score</th><th>Compliance</th><th>Recommendation</th><th>Date</th></tr></thead>
+          <tbody id="reportsBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tabLeads">
+      <div class="section-header"><h2>Leads / Sign-ups</h2><button class="export-btn" onclick="exportCSV('leads')">Export CSV</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Volume</th><th>Plan</th><th>Date</th></tr></thead>
+          <tbody id="leadsBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="upgradeModal">
+  <div class="modal-box">
+    <h3>Edit User</h3>
+    <input type="hidden" id="editEmail">
+    <label>Plan</label>
+    <select id="editPlan">
+      <option value="trial">Trial</option>
+      <option value="pro">Pro</option>
+      <option value="enterprise">Enterprise</option>
+    </select>
+    <label>Call Limit</label>
+    <input type="number" id="editLimit" min="0" max="99999" value="50">
+    <label>Reset Usage to 0</label>
+    <select id="editReset">
+      <option value="no">No - keep current usage</option>
+      <option value="yes">Yes - reset to 0</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveUser()">Save Changes</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var allUsers = [], allReports = [], allLeads = [];
+
+async function boot() {
+  try {
+    var res = await fetch('/admin/me');
+    if (!res.ok) { window.location.href = '/admin/login'; return; }
+    var data = await res.json();
+    document.getElementById('adminEmail').textContent = data.email;
+    loadAll();
+  } catch(e) { window.location.href = '/admin/login'; }
+}
+
+async function loadAll() {
+  await Promise.all([loadUsers(), loadReports(), loadLeads()]);
+}
+
+async function loadUsers() {
+  var res = await fetch('/admin/users');
+  var data = await res.json();
+  allUsers = data.users || [];
+  renderUsers(allUsers);
+  updateStats();
+}
+
+async function loadReports() {
+  var res = await fetch('/admin/reports');
+  var data = await res.json();
+  allReports = data.reports || [];
+  renderReports(allReports);
+}
+
+async function loadLeads() {
+  var res = await fetch('/leads');
+  var data = await res.json();
+  allLeads = data.leads || [];
+  renderLeads(allLeads);
+}
+
+function updateStats() {
+  var active = allUsers.filter(function(u) { return u.is_active; }).length;
+  var trial = allUsers.filter(function(u) { return u.plan === 'trial'; }).length;
+  var pro = allUsers.filter(function(u) { return u.plan !== 'trial'; }).length;
+  var nearLimit = allUsers.filter(function(u) { return u.calls_used >= 40 && u.calls_used < u.calls_limit; }).length;
+  var totalAudits = allUsers.reduce(function(s, u) { return s + (u.calls_used || 0); }, 0);
+  document.getElementById('sTotalUsers').textContent = allUsers.length;
+  document.getElementById('sActiveUsers').textContent = active + ' active';
+  document.getElementById('sTotalAudits').textContent = totalAudits;
+  document.getElementById('sTrialUsers').textContent = trial;
+  document.getElementById('sNearLimit').textContent = nearLimit + ' near limit';
+  document.getElementById('sProUsers').textContent = pro;
+}
+
+function renderUsers(users) {
+  var tbody = document.getElementById('usersBody');
+  if (!users.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No users yet.</td></tr>'; return; }
+  var rows = '';
+  for (var i = 0; i < users.length; i++) {
+    var u = users[i];
+    var used = u.calls_used || 0, limit = u.calls_limit || 50;
+    var pct = Math.min(100, Math.round(used / limit * 100));
+    var fillClass = pct >= 100 ? 'danger' : pct >= 80 ? 'warn' : '';
+    var planClass = u.plan === 'pro' ? 'plan-pro' : u.plan === 'enterprise' ? 'plan-enterprise' : 'plan-trial';
+    var joined = u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN') : '-';
+    rows += '<tr>';
+    rows += '<td>' + u.email + '</td>';
+    rows += '<td>' + (u.name || '-') + '</td>';
+    rows += '<td>' + (u.company || '-') + '</td>';
+    rows += '<td><span class="plan-badge ' + planClass + '">' + u.plan + '</span></td>';
+    rows += '<td><span class="usage-bar"><span class="usage-fill ' + fillClass + '" style="width:' + pct + '%"></span></span>' + used + '/' + limit + '</td>';
+    rows += '<td class="' + (u.is_active ? 'status-active' : 'status-inactive') + '">' + (u.is_active ? 'Active' : 'Disabled') + '</td>';
+    rows += '<td>' + joined + '</td>';
+    rows += '<td>';
+    rows += '<button class="action-btn" onclick="openUpgrade(\'' + u.email + '\',\'' + u.plan + '\',' + limit + ')">Edit</button>';
+    if (u.is_active) {
+      rows += '<button class="action-btn danger" onclick="toggleUser(\'' + u.email + '\',false)">Disable</button>';
+    } else {
+      rows += '<button class="action-btn" onclick="toggleUser(\'' + u.email + '\',true)">Enable</button>';
+    }
+    rows += '</td></tr>';
+  }
+  tbody.innerHTML = rows;
+}
+
+function renderReports(reports) {
+  var tbody = document.getElementById('reportsBody');
+  if (!reports.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No reports yet.</td></tr>'; return; }
+  var rows = '';
+  for (var i = 0; i < reports.length; i++) {
+    var r = reports[i];
+    var s = r.overall_score || 0;
+    var sc = s >= 8 ? '#00E5A0' : s >= 6 ? '#FFB800' : '#FF4060';
+    var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
+    rows += '<tr>';
+    rows += '<td style="font-size:12px">' + (r.user_email || 'anon') + '</td>';
+    rows += '<td>' + (r.file || '-') + '</td>';
+    rows += '<td>' + (r.agent_name || '-') + '</td>';
+    rows += '<td><strong style="color:' + sc + '">' + s + '/10</strong></td>';
+    rows += '<td>' + (r.compliance_passed ? '<span style="color:#00E5A0">Pass</span>' : '<span style="color:#FF4060">Fail</span>') + '</td>';
+    rows += '<td>' + (r.recommendation || '').replace('_', ' ') + '</td>';
+    rows += '<td>' + date + '</td>';
+    rows += '</tr>';
+  }
+  tbody.innerHTML = rows;
+}
+
+function renderLeads(leads) {
+  var tbody = document.getElementById('leadsBody');
+  if (!leads.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No leads yet.</td></tr>'; return; }
+  var rows = '';
+  for (var i = 0; i < leads.length; i++) {
+    var l = leads[i];
+    var date = l.created_at ? new Date(l.created_at).toLocaleDateString('en-IN') : '-';
+    rows += '<tr><td>' + (l.name||'-') + '</td><td>' + (l.email||'-') + '</td><td>' + (l.company||'-') + '</td><td>' + (l.volume||'-') + '</td><td>' + (l.plan||'trial') + '</td><td>' + date + '</td></tr>';
+  }
+  tbody.innerHTML = rows;
+}
+
+function filterUsers() {
+  var q = document.getElementById('userSearch').value.toLowerCase();
+  renderUsers(allUsers.filter(function(u) {
+    return (u.email||'').toLowerCase().includes(q) || (u.company||'').toLowerCase().includes(q) || (u.name||'').toLowerCase().includes(q);
+  }));
+}
+
+function switchTab(tab) {
+  var tabs = ['users','reports','leads'];
+  document.querySelectorAll('.ptab').forEach(function(el, i) { el.classList.toggle('active', tabs[i] === tab); });
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+}
+
+function openUpgrade(email, plan, limit) {
+  document.getElementById('editEmail').value = email;
+  document.getElementById('editPlan').value = plan;
+  document.getElementById('editLimit').value = limit;
+  document.getElementById('editReset').value = 'no';
+  document.getElementById('upgradeModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('upgradeModal').classList.remove('open'); }
+
+async function saveUser() {
+  var email = document.getElementById('editEmail').value;
+  var plan = document.getElementById('editPlan').value;
+  var limit = parseInt(document.getElementById('editLimit').value);
+  var reset = document.getElementById('editReset').value === 'yes';
+  var res = await fetch('/admin/users/update', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ email: email, plan: plan, calls_limit: limit, reset_usage: reset })
+  });
+  var data = await res.json();
+  if (!res.ok) { showToast('Error: ' + (data.detail || 'Failed'), 'error'); return; }
+  showToast('User updated', 'success');
+  closeModal();
+  loadUsers();
+}
+
+async function toggleUser(email, active) {
+  if (!confirm((active ? 'Enable' : 'Disable') + ' ' + email + '?')) return;
+  var res = await fetch('/admin/users/toggle', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ email: email, is_active: active })
+  });
+  var data = await res.json();
+  if (!res.ok) { showToast('Error: ' + (data.detail || 'Failed'), 'error'); return; }
+  showToast('User ' + (active ? 'enabled' : 'disabled'), 'success');
+  loadUsers();
+}
+
+function exportCSV(type) {
+  var rows = [], data = type === 'users' ? allUsers : type === 'reports' ? allReports : allLeads;
+  if (type === 'users') {
+    rows.push(['Email','Name','Company','Plan','Calls Used','Calls Limit','Status','Joined']);
+    data.forEach(function(u) { rows.push([u.email,u.name,u.company,u.plan,u.calls_used,u.calls_limit,u.is_active?'Active':'Disabled',u.created_at]); });
+  } else if (type === 'reports') {
+    rows.push(['User','File','Agent','Score','Compliance','Recommendation','Date']);
+    data.forEach(function(r) { rows.push([r.user_email,r.file,r.agent_name,r.overall_score,r.compliance_passed,r.recommendation,r.audited_at]); });
+  } else {
+    rows.push(['Name','Email','Company','Volume','Plan','Date']);
+    data.forEach(function(l) { rows.push([l.name,l.email,l.company,l.volume,l.plan,l.created_at]); });
+  }
+  var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; }).join(','); }).join('\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'auditiq_' + type + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+function logout() {
+  document.cookie = 'admin_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+  window.location.href = '/admin/login';
+}
+
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + (type||''); t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 4000);
+}
+
+boot();
+</script>
+</body>
+</html>
