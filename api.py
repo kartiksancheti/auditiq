@@ -4,6 +4,9 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Cookie, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 from auth import (
@@ -28,16 +31,73 @@ oauth.register(
 )
 # ───────────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="AuditIQ", version="2.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="AuditIQ", version="2.0.0", docs_url=None, redoc_url=None, openapi_url=None)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(CORSMiddleware, allow_origins=["https://audit.nxtautomation.online","https://auditiq.nxtautomation.online"], allow_methods=["GET","POST"], allow_headers=["*"], allow_credentials=True)
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY", "auditiq-secret-key-2026"))
 
 UPLOAD_DIR = Path("uploads")
+FRANCHISE_CLIENTS = {"salim@delightservices.in", "musicbeats897@gmail.com"}
 REPORTS_DIR = Path("reports")
 UPLOAD_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
 
 BASE_URL = os.getenv("BASE_URL", "https://audit.nxtautomation.online")
+
+@app.get("/admin/report/download/{audit_id}")
+async def download_report(audit_id: str, admin_session: str = Cookie(default=None)):
+    if not verify_admin_session(admin_session):
+        raise HTTPException(401, "Not authenticated")
+    # Try standard report
+    for path in [Path(f"reports/{audit_id}.json"), Path(f"reports/{audit_id}.checklist.json")]:
+        if path.exists():
+            return FileResponse(str(path), filename=f"{audit_id}_report.json", media_type="application/json")
+    # Search checklist reports by audit_id field
+    for rf in Path("reports").glob("*.checklist.json"):
+        try:
+            with open(rf) as f:
+                d = json.load(f)
+            if d.get("audit_id") == audit_id:
+                return FileResponse(str(rf), filename=f"{audit_id}_report.json", media_type="application/json")
+        except:
+            continue
+    raise HTTPException(404, "Report not found")
+
+@app.get("/admin/recording/download/{audit_id}")
+async def download_recording(audit_id: str, admin_session: str = Cookie(default=None)):
+    if not verify_admin_session(admin_session):
+        raise HTTPException(401, "Not authenticated")
+    # Search in uploads and franchise_recordings
+    for folder in [Path("uploads"), Path("franchise_recordings")]:
+        for f in folder.glob(f"{audit_id}*"):
+            return FileResponse(str(f), filename=f.name)
+    raise HTTPException(404, "Recording not found")
+
+@app.post("/admin/report/delete/{audit_id}")
+async def delete_report(audit_id: str, admin_session: str = Cookie(default=None)):
+    if not verify_admin_session(admin_session):
+        raise HTTPException(401, "Not authenticated")
+    deleted = False
+    for path in [Path(f"reports/{audit_id}.json"), Path(f"reports/{audit_id}.checklist.json")]:
+        if path.exists():
+            path.unlink()
+            deleted = True
+    if not deleted:
+        for rf in Path("reports").glob("*.checklist.json"):
+            try:
+                with open(rf) as f:
+                    d = json.load(f)
+                if d.get("audit_id") == audit_id:
+                    rf.unlink()
+                    deleted = True
+                    break
+            except:
+                continue
+    if not deleted:
+        raise HTTPException(404, "Report not found")
+    return {"success": True}
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HTML PAGES
@@ -658,9 +718,123 @@ async def login_page():
     return open("login.html").read()
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard():
+async def dashboard(request: Request, session: str = Cookie(default=None)):
+    token = request.query_params.get("token") or request.headers.get("X-Session-Token") or session
+    user = verify_session_token(token) if token else None
+    if user and user.get("email") in FRANCHISE_CLIENTS:
+        redirect_url = "/franchise-dashboard"
+        if token:
+            redirect_url += f"?token={token}"
+        return RedirectResponse(url=redirect_url)
     return open("dashboard.html").read()
 
+
+@app.get("/franchise-dashboard", response_class=HTMLResponse)
+async def franchise_dashboard(request: Request, session: str = Cookie(default=None)):
+    # Let JS handle auth - just serve the HTML
+    # Server side check only if token is in URL or cookie
+    token = request.query_params.get("token") or request.headers.get("X-Session-Token") or session
+    if token:
+        user = verify_session_token(token)
+        if user and user.get("email") not in FRANCHISE_CLIENTS:
+            return RedirectResponse(url="/login")
+    return open("franchise_dashboard.html").read()
+
+@app.post("/audit/franchise")
+async def audit_franchise_call(
+    request: Request,
+    file: UploadFile = File(...),
+    agent_name: str = Form(...),
+    session: str = Cookie(default=None),
+):
+    token = request.headers.get("X-Session-Token") or session
+    user = verify_session_token(token) if token else None
+    if not user:
+        raise HTTPException(401, "Please sign in")
+    if user.get("email") not in FRANCHISE_CLIENTS:
+        raise HTTPException(403, "Not authorized")
+    if not agent_name.strip():
+        raise HTTPException(400, "Agent name is required")
+
+    limit = check_call_limit(user["email"])
+    if not limit["allowed"]:
+        raise HTTPException(403, f"Call limit reached ({limit['used']}/{limit['limit']})")
+
+    if not file.filename.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
+        raise HTTPException(400, "Unsupported format. Use MP3, WAV, M4A, or OGG.")
+
+    file_content = await file.read()
+    file_id = str(uuid.uuid4())[:8]
+    safe_filename = file.filename.replace(" ", "_")
+    file_path = UPLOAD_DIR / f"{file_id}_{safe_filename}"
+    with open(file_path, "wb") as f:
+        f.write(file_content)
+
+    try:
+        from auditor import BURGER_SINGH_CRITERIA, score_call_checklist, generate_report_checklist
+        from auditor import transcribe_audio, parse_transcript
+        dg = await transcribe_audio(str(file_path))
+        td = parse_transcript(dg)
+        if "error" in td:
+            raise HTTPException(500, td["error"])
+        scores = score_call_checklist(td, BURGER_SINGH_CRITERIA)
+        report = generate_report_checklist(str(file_path), td, scores, BURGER_SINGH_CRITERIA)
+    except Exception as e:
+        raise HTTPException(500, f"Audit failed: {str(e)}")
+
+    updated = increment_call_count(user["email"])
+    report.update({
+        "agent_name": agent_name.strip(),
+        "user_email": user["email"],
+        "file": safe_filename,
+        "calls_used": updated["calls_used"],
+        "calls_limit": updated["calls_limit"],
+    })
+
+    report_path = Path(f"reports/{file_id}.checklist.json")
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    # Move to franchise recordings folder instead of deleting
+    try:
+        import shutil
+        recordings_dir = Path("franchise_recordings")
+        recordings_dir.mkdir(exist_ok=True)
+        shutil.move(str(file_path), str(recordings_dir / file_path.name))
+    except:
+        pass
+
+    return report
+
+@app.get("/checklist-list", response_class=HTMLResponse)
+async def checklist_list():
+    return open("checklist_list.html").read()
+
+@app.get("/checklist-reports-list")
+async def checklist_reports_list(request: Request, session: str = Cookie(default=None)):
+    token = request.headers.get("X-Session-Token") or request.query_params.get("token") or session
+    user = verify_session_token(token) if token else None
+    reports = []
+    for rf in sorted(Path("reports").glob("*.checklist.json"), reverse=True):
+        try:
+            with open(rf) as f:
+                d = json.load(f)
+            # Show report if user_email matches OR if admin viewing all
+            if user and d.get("user_email") == user.get("email"):
+                reports.append(d)
+        except Exception:
+            continue
+    return {"reports": reports}
+
+@app.get("/checklist-report", response_class=HTMLResponse)
+async def checklist_report():
+    return open("checklist_report.html").read()
+
+from fastapi.responses import FileResponse
+
+@app.get("/reports/{filename}")
+async def serve_report(filename: str):
+    return FileResponse(f"reports/{filename}")
 
 # ── Google OAuth ────────────────────────────────────────────────────────────────
 
@@ -760,14 +934,42 @@ async def send_to_telegram_and_delete(file_path: str, file_id: str, report: dict
         print("❌ Telegram not configured, skipping")
         return
     try:
+        # Handle both standard and checklist reports
+        is_checklist = report.get("mode") == "checklist"
+        if is_checklist:
+            score_str = report.get("score_display", "N/A")
+            result_str = f"{report.get('agent_name', 'Agent')} | Franchise Call"
+            compliance_str = "Checklist Mode"
+        else:
+            score_str = f"{report.get('overall_score', 'N/A')}/10"
+            result_str = report.get('recommendation', 'N/A')
+            compliance_str = 'Pass' if report.get('compliance_passed') else 'Fail'
+
         caption = (
             f"🎙️ New Call Audit\n"
             f"👤 User: {user_email}\n"
             f"📁 File: {Path(file_path).name}\n"
-            f"⭐ Score: {report.get('overall_score', 'N/A')}/10\n"
-            f"📋 Result: {report.get('recommendation', 'N/A')}\n"
-            f"✅ Compliance: {'Pass' if report.get('compliance_passed') else 'Fail'}"
+            f"⭐ Score: {score_str}\n"
+            f"📋 Result: {result_str}\n"
+            f"✅ Compliance: {compliance_str}"
         )
+        # Check if file exists before sending
+        if not Path(file_path).exists():
+            # Try franchise_recordings folder
+            alt_path = Path("franchise_recordings") / Path(file_path).name
+            if alt_path.exists():
+                file_path = str(alt_path)
+            else:
+                print(f"❌ Audio file not found: {file_path}")
+                # Send text notification only
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        data={"chat_id": chat_id, "text": caption},
+                        timeout=30
+                    )
+                return
+
         async with httpx.AsyncClient() as client:
             with open(file_path, "rb") as audio:
                 await client.post(
@@ -809,10 +1011,17 @@ async def audit_single_call(
     if not file.filename.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
         raise HTTPException(400, "Unsupported format. Use MP3, WAV, M4A, or OGG.")
 
+    file_content = await file.read()
+    file_size_mb = len(file_content) / (1024 * 1024)
+
+    # Cap trial users to 1 min audio (~1.5MB)
+    if user.get("plan", "trial") == "trial" and file_size_mb > 1.5:
+        raise HTTPException(400, f"Free trial is limited to 1-minute audio files ({file_size_mb:.1f}MB uploaded). Upgrade to audit longer calls.")
+
     file_id = str(uuid.uuid4())[:8]
     file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
     with open(file_path, "wb") as f:
-        f.write(await file.read())
+        f.write(file_content)
 
     context = " ".join(filter(None, [f"Client: {client_name}" if client_name else "", f"Agent: {agent_name}" if agent_name else ""])).strip()
     try:
@@ -974,7 +1183,7 @@ async def list_leads():
 import sqlite3 as _sqlite3
 
 ADMIN_USERS = {
-    os.getenv("ADMIN_EMAIL", "admin@nxtautomation.online"): os.getenv("ADMIN_PASSWORD", "AuditIQ@Admin2026")
+    os.getenv("ADMIN_EMAIL"): os.getenv("ADMIN_PASSWORD")
 }
 
 def verify_admin_session(admin_session: str):
@@ -998,7 +1207,8 @@ async def admin_login_page():
     return open("admin_login.html").read()
 
 @app.post("/admin/login")
-async def admin_login(email: str = Form(...), password: str = Form(...)):
+@limiter.limit("5/minute")
+async def admin_login(request: Request, email: str = Form(...), password: str = Form(...)):
     expected = ADMIN_USERS.get(email)
     if not expected or password != expected:
         raise HTTPException(401, "Invalid admin credentials")
@@ -1068,172 +1278,60 @@ async def admin_list_reports(admin_session: str = Cookie(default=None)):
     if not verify_admin_session(admin_session):
         raise HTTPException(401, "Not authenticated")
     reports = []
-    for rf in sorted(REPORTS_DIR.glob("*.json"), reverse=True):
+    standard_files = [f for f in REPORTS_DIR.glob("*.json") if not f.name.endswith(".checklist.json")]
+    checklist_files = list(REPORTS_DIR.glob("*.checklist.json"))
+    all_files = sorted(standard_files + checklist_files, key=lambda x: x.stat().st_mtime, reverse=True)
+    for rf in all_files:
         try:
             with open(rf) as f:
                 d = json.load(f)
-            reports.append({"audit_id": d.get("audit_id"), "user_email": d.get("user_email", "anonymous"), "file": d.get("file"), "agent_name": d.get("agent_name", ""), "overall_score": d.get("overall_score"), "compliance_passed": d.get("compliance_passed"), "recommendation": d.get("recommendation"), "audited_at": d.get("audited_at")})
+            mode = d.get("mode", "standard")
+            if mode == "checklist":
+                score_display = d.get("score_display", f"{d.get('total_score',0)}/{d.get('max_score',85)}")
+                reports.append({
+                    "audit_id": d.get("audit_id"),
+                    "user_email": d.get("user_email", "anonymous"),
+                    "file": d.get("file"),
+                    "agent_name": d.get("agent_name", ""),
+                    "overall_score": score_display,
+                    "compliance_passed": True,
+                    "recommendation": "checklist",
+                    "audited_at": d.get("audited_at"),
+                    "mode": "checklist"
+                })
+            else:
+                reports.append({
+                    "audit_id": d.get("audit_id"),
+                    "user_email": d.get("user_email", "anonymous"),
+                    "file": d.get("file"),
+                    "agent_name": d.get("agent_name", ""),
+                    "overall_score": d.get("overall_score"),
+                    "compliance_passed": d.get("compliance_passed"),
+                    "recommendation": d.get("recommendation"),
+                    "audited_at": d.get("audited_at"),
+                    "mode": "standard"
+                })
         except Exception:
             continue
     return {"total": len(reports), "reports": reports}
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ADMIN PANEL
-# ══════════════════════════════════════════════════════════════════════════════
-
-import sqlite3 as _sqlite3
-
-ADMIN_USERS = {
-    os.getenv("ADMIN_EMAIL", "admin@nxtautomation.online"): os.getenv("ADMIN_PASSWORD", "AuditIQ@Admin2026")
-}
-
-def verify_admin_session(admin_session: str):
-    if not admin_session:
-        return None
-    try:
-        conn = _sqlite3.connect("leads.db")
-        row = conn.execute(
-            "SELECT email FROM sessions WHERE token=? AND expires_at > datetime('now')",
-            [admin_session]
-        ).fetchone()
-        conn.close()
-        if row and row[0] in ADMIN_USERS:
-            return {"email": row[0]}
-    except Exception:
-        pass
-    return None
-
-@app.get("/admin/login", response_class=HTMLResponse)
-async def admin_login_page():
-    return open("admin_login.html").read()
-
-@app.post("/admin/login")
-async def admin_login(email: str = Form(...), password: str = Form(...)):
-    expected = ADMIN_USERS.get(email)
-    if not expected or password != expected:
-        raise HTTPException(401, "Invalid admin credentials")
-    session_token = create_session_token(email)
-    response = JSONResponse({"success": True})
-    response.set_cookie(key="admin_session", value=session_token, max_age=86400, httponly=True, samesite="lax")
-    return response
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(admin_session: str = Cookie(default=None)):
+@app.get("/admin/report/{audit_id}")
+async def get_report_detail(audit_id: str, admin_session: str = Cookie(default=None)):
     if not verify_admin_session(admin_session):
-        return RedirectResponse(url="/admin/login")
-    return open("admin.html").read()
-
-@app.get("/admin/me")
-async def admin_me(admin_session: str = Cookie(default=None)):
-    admin = verify_admin_session(admin_session)
-    if not admin:
-        raise HTTPException(401, "Not authenticated")
-    return admin
-
-@app.get("/admin/users")
-async def admin_list_users(admin_session: str = Cookie(default=None)):
-    if not verify_admin_session(admin_session):
-        raise HTTPException(401, "Not authenticated")
-    conn = _sqlite3.connect("leads.db")
-    rows = conn.execute(
-        "SELECT email, name, company, plan, calls_used, calls_limit, is_active, created_at FROM users ORDER BY created_at DESC"
-    ).fetchall()
-    conn.close()
-    users = [{"email": r[0], "name": r[1], "company": r[2], "plan": r[3], "calls_used": r[4], "calls_limit": r[5], "is_active": bool(r[6]), "created_at": r[7]} for r in rows]
-    return {"total": len(users), "users": users}
-
-@app.post("/admin/users/update")
-async def admin_update_user(request: Request, admin_session: str = Cookie(default=None)):
-    if not verify_admin_session(admin_session):
-        raise HTTPException(401, "Not authenticated")
-    data = await request.json()
-    email = data.get("email")
-    if not email:
-        raise HTTPException(400, "Email required")
-    conn = _sqlite3.connect("leads.db")
-    if data.get("reset_usage"):
-        conn.execute("UPDATE users SET plan=?, calls_limit=?, calls_used=0 WHERE email=?", [data.get("plan"), data.get("calls_limit"), email])
-    else:
-        conn.execute("UPDATE users SET plan=?, calls_limit=? WHERE email=?", [data.get("plan"), data.get("calls_limit"), email])
-    conn.commit()
-    conn.close()
-    return {"success": True}
-
-@app.post("/admin/users/toggle")
-async def admin_toggle_user(request: Request, admin_session: str = Cookie(default=None)):
-    if not verify_admin_session(admin_session):
-        raise HTTPException(401, "Not authenticated")
-    data = await request.json()
-    email = data.get("email")
-    if not email:
-        raise HTTPException(400, "Email required")
-    conn = _sqlite3.connect("leads.db")
-    conn.execute("UPDATE users SET is_active=? WHERE email=?", [1 if data.get("is_active") else 0, email])
-    conn.commit()
-    conn.close()
-    return {"success": True}
-
-@app.get("/admin/reports")
-async def admin_list_reports(admin_session: str = Cookie(default=None)):
-    if not verify_admin_session(admin_session):
-        raise HTTPException(401, "Not authenticated")
-    reports = []
-    for rf in sorted(REPORTS_DIR.glob("*.json"), reverse=True):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # Try standard report first
+    report_path = Path(f"reports/{audit_id}.json")
+    if report_path.exists():
+        with open(report_path, "r") as f:
+            return json.load(f)
+    # Search all checklist reports by audit_id field
+    for rf in Path("reports").glob("*.checklist.json"):
         try:
             with open(rf) as f:
                 d = json.load(f)
-            reports.append({"audit_id": d.get("audit_id"), "user_email": d.get("user_email", "anonymous"), "file": d.get("file"), "agent_name": d.get("agent_name", ""), "overall_score": d.get("overall_score"), "compliance_passed": d.get("compliance_passed"), "recommendation": d.get("recommendation"), "audited_at": d.get("audited_at")})
-        except Exception:
+            if d.get("audit_id") == audit_id:
+                return d
+        except:
             continue
-    return {"total": len(reports), "reports": reports}
-
-# ── Trial Warning Email ─────────────────────────────────────────────────────
-async def send_trial_warning_email(email: str, name: str, used: int, limit: int):
-    import aiosmtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    remaining = limit - used
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"⚠️ Only {remaining} AuditIQ trial calls remaining"
-    msg["From"] = os.getenv("FROM_EMAIL")
-    msg["To"] = email
-    html = f"""
-    <div style="font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;background:#080C12;color:#E8EDF5;border-radius:16px;overflow:hidden">
-      <div style="background:#0E1420;padding:28px 32px;border-bottom:1px solid #1E2D45">
-        <span style="font-size:22px;font-weight:800;color:white">Audit<span style="color:#00E5A0">IQ</span></span>
-      </div>
-      <div style="padding:32px">
-        <h2 style="color:#FFB800;margin-bottom:12px">⚠️ Trial Limit Warning</h2>
-        <p style="color:#C8D3E5;line-height:1.6">Hi {name},</p>
-        <p style="color:#C8D3E5;line-height:1.6;margin-top:12px">
-          You've used <strong style="color:#FFB800">{used}/{limit}</strong> of your free trial calls.
-          Only <strong style="color:#FFB800">{remaining} calls remaining</strong>.
-        </p>
-        <p style="color:#C8D3E5;line-height:1.6;margin-top:12px">
-          Upgrade now to keep auditing without interruption.
-        </p>
-        <div style="margin-top:28px">
-          <a href="https://auditiq.nxtautomation.online/#pricing"
-             style="background:#00E5A0;color:#000;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;display:inline-block">
-            Upgrade Now →
-          </a>
-        </div>
-        <p style="color:#4A5A72;font-size:13px;margin-top:28px">
-          Questions? Reply to this email or reach us at contact@nxtautomation.online
-        </p>
-      </div>
-    </div>
-    """
-    msg.attach(MIMEText(html, "html"))
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=os.getenv("SMTP_HOST"),
-            port=int(os.getenv("SMTP_PORT", 465)),
-            username=os.getenv("SMTP_USER"),
-            password=os.getenv("SMTP_PASSWORD"),
-            use_tls=True,
-        )
-        print(f"✅ Trial warning email sent to {email}")
-    except Exception as e:
-        print(f"❌ Failed to send trial warning email: {e}")
+    raise HTTPException(status_code=404, detail="Report not found")
+# ══════════════════════════════════════════════════════════════════════════════

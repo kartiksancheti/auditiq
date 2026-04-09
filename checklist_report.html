@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditIQ — Checklist Report</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+
+/* HEADER */
+.header { background: #1a1a2e; color: white; padding: 16px 30px; display: flex; align-items: center; justify-content: space-between; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 18px; font-weight: 700; color: white; }
+.logo span { color: #00E5A0; }
+.badge { background: #e94560; color: white; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.client-tag { background: rgba(255,255,255,0.08); color: #aaa; padding: 3px 10px; border-radius: 20px; font-size: 12px; }
+
+/* CONTAINER */
+.container { max-width: 900px; margin: 0 auto; padding: 28px 24px; }
+
+/* SCORE HERO */
+.score-hero { background: #1a1a2e; border-radius: 16px; padding: 36px 40px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(0,0,0,0.12); animation: fadeUp 0.4s ease; }
+.score-left h1 { font-size: 15px; color: #6B7A99; font-weight: 500; margin-bottom: 6px; }
+.score-left .filename { font-size: 22px; font-weight: 700; color: white; margin-bottom: 4px; }
+.score-left .meta { font-size: 12px; color: #555; }
+.score-right { text-align: center; }
+.score-circle { width: 110px; height: 110px; border-radius: 50%; background: conic-gradient(#00E5A0 var(--pct), rgba(255,255,255,0.08) 0); display: flex; align-items: center; justify-content: center; position: relative; }
+.score-circle::before { content: ''; position: absolute; inset: 8px; background: #1a1a2e; border-radius: 50%; }
+.score-inner { position: relative; z-index: 1; text-align: center; }
+.score-num { font-size: 26px; font-weight: 800; color: white; line-height: 1; }
+.score-den { font-size: 12px; color: #6B7A99; }
+.score-label { font-size: 11px; color: #00E5A0; margin-top: 8px; font-weight: 600; letter-spacing: 0.5px; }
+
+/* METADATA ROW */
+.meta-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; animation: fadeUp 0.4s ease 0.05s both; }
+.meta-card { background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.meta-card .lbl { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.meta-card .val { font-size: 18px; font-weight: 700; color: #1a1a2e; }
+
+/* CHECKLIST */
+.card { background: white; border-radius: 12px; padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); animation: fadeUp 0.4s ease 0.1s both; }
+.card-title { font-size: 13px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 18px; }
+.checklist { display: flex; flex-direction: column; gap: 10px; }
+.check-item { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 10px; transition: transform 0.15s; animation: slideIn 0.3s ease both; }
+.check-item:hover { transform: translateX(4px); }
+.check-item.pass { background: #f0fdf4; border: 1px solid #bbf7d0; }
+.check-item.fail { background: #fff5f5; border: 1px solid #fecaca; }
+.check-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.check-item.pass .check-icon { background: #dcfce7; }
+.check-item.fail .check-icon { background: #fee2e2; }
+.check-label { font-size: 14px; font-weight: 500; color: #333; flex: 1; }
+.check-status { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+.check-item.pass .check-status { color: #16a34a; }
+.check-item.fail .check-status { color: #dc2626; }
+
+/* SUMMARY */
+.summary-box { background: #f8f9fa; border-radius: 10px; padding: 16px 20px; font-size: 14px; color: #444; line-height: 1.7; border-left: 3px solid #00E5A0; }
+
+/* FLAGS / STRENGTHS / IMPROVEMENTS */
+.list-items { display: flex; flex-direction: column; gap: 8px; }
+.flag-item { background: #fff8e6; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 6px; font-size: 13px; color: #444; }
+.str-item { background: #f0fdf4; border-left: 3px solid #22c55e; padding: 10px 14px; border-radius: 6px; font-size: 13px; color: #444; }
+.imp-item { background: #f0f4ff; border-left: 3px solid #6366f1; padding: 10px 14px; border-radius: 6px; font-size: 13px; color: #444; }
+.empty { color: #bbb; font-size: 13px; font-style: italic; }
+
+/* TRANSCRIPT */
+.transcript-box { background: #f8f9fa; border-radius: 10px; padding: 18px; max-height: 300px; overflow-y: auto; font-size: 13px; line-height: 1.8; white-space: pre-wrap; color: #444; }
+.transcript-box::-webkit-scrollbar { width: 4px; }
+.transcript-box::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+/* LOADING / ERROR */
+.loading-state { text-align: center; padding: 80px 40px; color: #888; }
+.loading-state .spinner { width: 40px; height: 40px; border: 3px solid #f0f0f0; border-top-color: #00E5A0; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+.error-state { text-align: center; padding: 80px 40px; }
+.error-state h2 { color: #e94560; margin-bottom: 8px; }
+.error-state p { color: #888; font-size: 14px; }
+
+/* ANIMATIONS */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .header { padding: 14px 16px; }
+  .container { padding: 16px; }
+  .score-hero { flex-direction: column; gap: 24px; text-align: center; }
+  .meta-row { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">Audit<span>IQ</span></div>
+    <span class="badge">Checklist Report</span>
+    <span class="client-tag" id="clientTag">Loading...</span>
+  </div>
+</div>
+
+<div class="container" id="app">
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Loading report...</p>
+  </div>
+</div>
+
+<script>
+// ─── Load JSON ───────────────────────────────────────────
+async function loadReport() {
+  const params = new URLSearchParams(window.location.search);
+  const file = params.get('file');
+
+  if (!file) {
+    renderError('No report file specified.', 'Add ?file=your_report.checklist.json to the URL');
+    return;
+  }
+
+  try {
+    const res = await fetch(file);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderReport(data);
+  } catch (e) {
+    renderError('Could not load report', e.message);
+  }
+}
+
+// ─── Render ───────────────────────────────────────────────
+function renderReport(d) {
+  const passed = d.total_passed ?? 0;
+  const total = d.total_checks ?? d.checklist?.length ?? 0;
+  const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+  document.getElementById('clientTag').textContent = d.client ?? 'Custom Client';
+
+  const checklist = d.checklist ?? [];
+  const flags = d.flags ?? [];
+  const strengths = d.strengths ?? [];
+  const improvements = d.improvement_areas ?? [];
+
+  const meta = d.call_metadata ?? {};
+  const duration = meta.duration_seconds ? formatDuration(meta.duration_seconds) : '—';
+  const agentRatio = meta.agent_talk_ratio ? `${meta.agent_talk_ratio}%` : '—';
+  const turns = meta.total_turns ?? '—';
+
+  document.getElementById('app').innerHTML = `
+
+    <!-- SCORE HERO -->
+    <div class="score-hero">
+      <div class="score-left">
+        <h1>Franchise Call Audit</h1>
+        <div class="filename">${d.file ?? 'Call Recording'}</div>
+        <div class="meta">Audited: ${formatDate(d.audited_at)} &nbsp;·&nbsp; ID: ${d.audit_id ?? '—'}</div>
+      </div>
+      <div class="score-right">
+        <div class="score-circle" style="--pct: ${pct}%">
+          <div class="score-inner">
+            <div class="score-num">${passed}</div>
+            <div class="score-den">/ ${total}</div>
+          </div>
+        </div>
+        <div class="score-label">CHECKS COVERED</div>
+      </div>
+    </div>
+
+    <!-- METADATA -->
+    <div class="meta-row">
+      <div class="meta-card">
+        <div class="lbl">Call Duration</div>
+        <div class="val">${duration}</div>
+      </div>
+      <div class="meta-card">
+        <div class="lbl">Agent Talk Ratio</div>
+        <div class="val">${agentRatio}</div>
+      </div>
+      <div class="meta-card">
+        <div class="lbl">Total Turns</div>
+        <div class="val">${turns}</div>
+      </div>
+    </div>
+
+    <!-- CHECKLIST -->
+    <div class="card">
+      <div class="card-title">Parameter Checklist</div>
+      <div class="checklist">
+        ${checklist.map((item, i) => `
+          <div class="check-item ${item.passed ? 'pass' : 'fail'}" style="animation-delay: ${i * 0.06}s">
+            <div class="check-icon">${item.passed ? '✅' : '❌'}</div>
+            <div style="flex:1">
+              <div class="check-label">${item.label}</div>
+              ${item.timestamp ? '<div style="font-size:11px;color:#888;margin-top:3px">⏱ ' + item.timestamp + '</div>' : ''}
+            </div>
+            <div class="check-status">${item.passed ? 'COVERED' : 'MISSED'}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- SUMMARY -->
+    <div class="card" style="animation-delay: 0.15s">
+      <div class="card-title">Call Summary</div>
+      <div class="summary-box">${d.call_summary ?? 'No summary available.'}</div>
+    </div>
+
+    <!-- FLAGS + STRENGTHS -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; animation: fadeUp 0.4s ease 0.2s both;">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">⚠️ Flags</div>
+        <div class="list-items">
+          ${flags.length ? flags.map(f => `<div class="flag-item">${f}</div>`).join('') : '<div class="empty">No flags raised</div>'}
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">💪 Strengths</div>
+        <div class="list-items">
+          ${strengths.length ? strengths.map(s => `<div class="str-item">${s}</div>`).join('') : '<div class="empty">None noted</div>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- IMPROVEMENTS
+    <div class="card" style="animation: fadeUp 0.4s ease 0.25s both">
+      <div class="card-title">🎯 Coaching Suggestions</div>
+      <div class="list-items">
+        ${improvements.length ? improvements.map(i => `<div class="imp-item">${i}</div>`).join('') : '<div class="empty">No suggestions</div>'}
+      </div>
+    </div>
+-->
+    <!-- TRANSCRIPT -->
+    <div class="card" style="animation: fadeUp 0.4s ease 0.3s both">
+      <div class="card-title">📄 Full Transcript</div>
+      <div class="transcript-box">${d.full_transcript ?? 'Transcript not available.'}</div>
+    </div>
+  `;
+}
+
+function renderError(title, msg) {
+  document.getElementById('clientTag').textContent = 'Error';
+  document.getElementById('app').innerHTML = `
+    <div class="error-state">
+      <h2>${title}</h2>
+      <p>${msg}</p>
+    </div>`;
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}m ${s}s`;
+}
+
+loadReport();
+</script>
+</body>
+</html>

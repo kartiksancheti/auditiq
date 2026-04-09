@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditIQ — Franchise Call Reports</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+.header { background: #1a1a2e; color: white; padding: 16px 30px; display: flex; align-items: center; justify-content: space-between; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 18px; font-weight: 700; color: white; }
+.logo span { color: #00E5A0; }
+.badge { background: #e94560; color: white; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.client-tag { background: rgba(255,255,255,0.08); color: #aaa; padding: 3px 10px; border-radius: 20px; font-size: 12px; }
+.container { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
+
+/* SUMMARY STATS */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; animation: fadeUp 0.4s ease; }
+.stat-card { background: white; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.stat-card .num { font-size: 28px; font-weight: 800; color: #1a1a2e; }
+.stat-card .num.green { color: #16a34a; }
+.stat-card .num.orange { color: #ea580c; }
+.stat-card .lbl { font-size: 12px; color: #888; margin-top: 4px; }
+
+/* TABLE */
+.card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; animation: fadeUp 0.4s ease 0.1s both; }
+.card-header { padding: 18px 24px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+.card-header h2 { font-size: 15px; color: #555; font-weight: 600; }
+.card-header span { font-size: 12px; color: #aaa; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #f8f9fa; padding: 11px 16px; text-align: left; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 14px 16px; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+tr:hover td { background: #fafafa; }
+.score-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 13px; }
+.score-high { background: #dcfce7; color: #16a34a; }
+.score-mid { background: #fef9c3; color: #ca8a04; }
+.score-low { background: #fee2e2; color: #dc2626; }
+.view-btn { background: none; border: 1px solid #00E5A0; color: #00E5A0; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+.view-btn:hover { background: #00E5A0; color: #000; }
+.progress-bar { width: 80px; height: 6px; background: #f0f0f0; border-radius: 3px; display: inline-block; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 3px; }
+
+/* MODAL */
+.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; overflow-y: auto; }
+.modal.open { display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+.modal-content { background: white; border-radius: 16px; padding: 30px; max-width: 750px; width: 100%; position: relative; }
+.modal-close { position: absolute; top: 16px; right: 20px; background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
+
+/* GROUP SCORES */
+.groups-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+.group-card { background: #f8f9fa; border-radius: 10px; padding: 14px 16px; }
+.group-card .g-name { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.group-card .g-score { font-size: 20px; font-weight: 800; color: #1a1a2e; }
+.group-card .g-bar { height: 4px; background: #e5e7eb; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.group-card .g-fill { height: 100%; border-radius: 2px; background: #00E5A0; }
+
+/* CHECKLIST IN MODAL */
+.checklist-modal { display: flex; flex-direction: column; gap: 8px; }
+.check-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; }
+.check-row.pass { background: #f0fdf4; border: 1px solid #bbf7d0; }
+.check-row.fail { background: #fff5f5; border: 1px solid #fecaca; }
+.check-row .icon { font-size: 14px; flex-shrink: 0; }
+.check-row .clabel { font-size: 13px; flex: 1; color: #333; }
+.check-row .cgroup { font-size: 10px; color: #aaa; }
+.check-row .cpts { font-size: 12px; font-weight: 700; }
+.check-row.pass .cpts { color: #16a34a; }
+.check-row.fail .cpts { color: #dc2626; }
+
+.sec-title { font-size: 12px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
+.summary-box { background: #f8f9fa; border-radius: 8px; padding: 14px; font-size: 13px; color: #444; line-height: 1.7; border-left: 3px solid #00E5A0; margin-bottom: 16px; }
+.flag-item { background: #fff8e6; border-left: 3px solid #f59e0b; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; }
+.str-item { background: #f0fdf4; border-left: 3px solid #22c55e; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; }
+.transcript-box { background: #f8f9fa; border-radius: 8px; padding: 14px; max-height: 220px; overflow-y: auto; font-size: 12px; line-height: 1.8; white-space: pre-wrap; color: #555; }
+
+.loading-state { text-align: center; padding: 60px; color: #888; }
+.spinner { width: 36px; height: 36px; border: 3px solid #f0f0f0; border-top-color: #00E5A0; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .groups-grid { grid-template-columns: 1fr; }
+  .container { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">Audit<span>IQ</span></div>
+    <span class="badge">Franchise Reports</span>
+    <span class="client-tag">Burger Singh — Delight Services</span>
+  </div>
+  <span style="font-size:12px;color:#555" id="lastUpdated"></span>
+</div>
+
+<div class="container">
+  <div id="statsRow" class="stats" style="display:none">
+    <div class="stat-card"><div class="num" id="totalCalls">-</div><div class="lbl">Total Calls</div></div>
+    <div class="stat-card"><div class="num green" id="avgScore">-</div><div class="lbl">Avg Score</div></div>
+    <div class="stat-card"><div class="num" id="topScore">-</div><div class="lbl">Top Score</div></div>
+    <div class="stat-card"><div class="num orange" id="needsCoaching">-</div><div class="lbl">Needs Coaching</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>All Franchise Call Audits</h2>
+      <span id="reportCount">Loading...</span>
+    </div>
+    <div id="tableWrap">
+      <div class="loading-state"><div class="spinner"></div><p>Loading reports...</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal" id="reportModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+var reports = [];
+
+async function loadReports() {
+  try {
+    var res = await fetch('/checklist-reports-list');
+    var data = await res.json();
+    reports = data.reports || [];
+    renderTable(reports);
+    renderStats(reports);
+  } catch(e) {
+    document.getElementById('tableWrap').innerHTML = '<div class="loading-state"><p>Error loading reports. Make sure the API endpoint is set up.</p></div>';
+  }
+}
+
+function renderStats(reports) {
+  if (!reports.length) return;
+  var scores = reports.map(function(r) { return r.total_score || 0; });
+  var avg = scores.reduce(function(a, b) { return a + b; }, 0) / scores.length;
+  var top = Math.max.apply(null, scores);
+  var max = reports[0].max_score || 85;
+  var needsCoaching = reports.filter(function(r) { return (r.total_score / max * 100) < 60; }).length;
+
+  document.getElementById('totalCalls').textContent = reports.length;
+  document.getElementById('avgScore').textContent = avg.toFixed(1) + '/' + max;
+  document.getElementById('topScore').textContent = top + '/' + max;
+  document.getElementById('needsCoaching').textContent = needsCoaching;
+  document.getElementById('statsRow').style.display = 'grid';
+  document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleString('en-IN');
+}
+
+function renderTable(reports) {
+  if (!reports.length) {
+    document.getElementById('tableWrap').innerHTML = '<div class="loading-state"><p>No reports found.</p></div>';
+    return;
+  }
+  document.getElementById('reportCount').textContent = reports.length + ' calls audited';
+  var rows = '';
+  for (var i = 0; i < reports.length; i++) {
+    var r = reports[i];
+    var score = r.total_score || 0;
+    var max = r.max_score || 85;
+    var pct = Math.round(score / max * 100);
+    var pillClass = pct >= 75 ? 'score-high' : pct >= 50 ? 'score-mid' : 'score-low';
+    var fillColor = pct >= 75 ? '#16a34a' : pct >= 50 ? '#ca8a04' : '#dc2626';
+    var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
+    var duration = r.call_metadata && r.call_metadata.duration_seconds ? formatDuration(r.call_metadata.duration_seconds) : '-';
+    rows += '<tr>';
+    rows += '<td style="font-weight:600;color:#1a1a2e">#' + (i+1) + '</td>';
+    rows += '<td style="font-size:11px;color:#888;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.file || '-') + '</td>';
+    rows += '<td>' + duration + '</td>';
+    rows += '<td><span class="progress-bar"><span class="progress-fill" style="width:' + pct + '%;background:' + fillColor + '"></span></span><span class="score-pill ' + pillClass + '">' + score + '/' + max + '</span></td>';
+    rows += '<td style="color:#888;font-size:12px">' + pct + '%</td>';
+    rows += '<td>' + date + '</td>';
+    rows += '<td><button class="view-btn" onclick="viewReport(' + i + ')">View Report</button></td>';
+    rows += '</tr>';
+  }
+  document.getElementById('tableWrap').innerHTML = '<table><thead><tr><th>#</th><th>File</th><th>Duration</th><th>Score</th><th>%</th><th>Date</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function viewReport(idx) {
+  var r = reports[idx];
+  var score = r.total_score || 0;
+  var max = r.max_score || 85;
+  var pct = Math.round(score / max * 100);
+  var scoreColor = pct >= 75 ? '#16a34a' : pct >= 50 ? '#ca8a04' : '#dc2626';
+
+  // Group scores
+  var groups = {};
+  var groupMax = {};
+  (r.checklist || []).forEach(function(c) {
+    if (!groups[c.group]) { groups[c.group] = 0; groupMax[c.group] = 0; }
+    groups[c.group] += c.points_earned || 0;
+    groupMax[c.group] += c.points_max || 0;
+  });
+
+  var groupHtml = Object.keys(groups).map(function(g) {
+    var gScore = groups[g];
+    var gMax = groupMax[g];
+    var gPct = Math.round(gScore / gMax * 100);
+    var gColor = gPct >= 75 ? '#16a34a' : gPct >= 50 ? '#ca8a04' : '#dc2626';
+    return '<div class="group-card"><div class="g-name">' + g + '</div><div class="g-score" style="color:' + gColor + '">' + gScore + '/' + gMax + ' <span style="font-size:12px;color:#aaa">(' + gPct + '%)</span></div><div class="g-bar"><div class="g-fill" style="width:' + gPct + '%;background:' + gColor + '"></div></div></div>';
+  }).join('');
+
+  // Checklist
+  var checkHtml = (r.checklist || []).map(function(c) {
+    var icon = c.passed ? '✅' : '❌';
+    var pts = c.passed ? '+' + c.points_max : '0/' + c.points_max;
+    return '<div class="check-row ' + (c.passed ? 'pass' : 'fail') + '"><span class="icon">' + icon + '</span><div style="flex:1"><span class="clabel">' + c.label + '</span>' + (c.timestamp ? '<div style="font-size:11px;color:#888;margin-top:2px">⏱ ' + c.timestamp + '</div>' : '') + '</div><span class="cgroup">' + (c.negative ? '⚠️ Negative' : '') + '</span><span class="cpts">' + pts + ' pts</span></div>';
+  }).join('');
+
+  var flags = (r.flags || []).map(function(f) { return '<div class="flag-item">' + f + '</div>'; }).join('') || '<div style="color:#bbb;font-size:13px">None</div>';
+  var strengths = (r.strengths || []).map(function(s) { return '<div class="str-item">' + s + '</div>'; }).join('') || '<div style="color:#bbb;font-size:13px">None</div>';
+
+  document.getElementById('modalBody').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px">FRANCHISE CALL AUDIT</div>
+        <div style="font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:4px">${r.file || 'Call Recording'}</div>
+        <div style="font-size:12px;color:#aaa">${r.audited_at ? new Date(r.audited_at).toLocaleString('en-IN') : ''}</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:38px;font-weight:800;color:${scoreColor};line-height:1">${score}<span style="font-size:16px;color:#ccc">/${max}</span></div>
+        <div style="font-size:11px;color:#aaa">${pct}% Score</div>
+      </div>
+    </div>
+
+    <div class="sec-title">Score by Group</div>
+    <div class="groups-grid">${groupHtml}</div>
+
+    <div class="sec-title">Call Summary</div>
+    <div class="summary-box">${r.call_summary || '—'}</div>
+
+    <div class="sec-title">Parameter Checklist</div>
+    <div class="checklist-modal">${checkHtml}</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div><div class="sec-title">⚠️ Flags</div>${flags}</div>
+      <div><div class="sec-title">💪 Strengths</div>${strengths}</div>
+    </div>
+
+    <div class="sec-title" style="margin-top:16px">📄 Transcript</div>
+    <div class="transcript-box">${r.full_transcript || 'Not available'}</div>
+  `;
+  document.getElementById('reportModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('reportModal').classList.remove('open');
+}
+
+function formatDuration(sec) {
+  var m = Math.floor(sec / 60);
+  var s = Math.floor(sec % 60);
+  return m + 'm ' + s + 's';
+}
+
+window.onclick = function(e) {
+  var modal = document.getElementById('reportModal');
+  if (e.target === modal) closeModal();
+}
+
+loadReports();
+</script>
+</body>
+</html>

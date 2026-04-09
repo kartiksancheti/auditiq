@@ -42,9 +42,8 @@ tr:hover td { background: #111825; }
 .usage-fill { height: 100%; border-radius: 3px; background: #00E5A0; }
 .usage-fill.warn { background: #FFB800; }
 .usage-fill.danger { background: #FF4060; }
-.action-btn { background: none; border: 1px solid #2A3A52; color: #6B7A99; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-right: 4px; }
+.action-btn { background: none; border: 1px solid #4A5A72; color: #C8D3E5; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-right: 4px; }
 .action-btn:hover { border-color: #00E5A0; color: #00E5A0; }
-.action-btn.danger:hover { border-color: #FF4060; color: #FF4060; }
 .tabs { display: flex; gap: 4px; padding: 16px 24px 0; border-bottom: 1px solid #1E2D45; }
 .ptab { padding: 10px 20px; border: none; background: none; color: #6B7A99; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
 .ptab.active { color: #00E5A0; border-bottom-color: #00E5A0; }
@@ -53,7 +52,7 @@ tr:hover td { background: #111825; }
 .empty { text-align: center; padding: 48px; color: #4A5A72; font-size: 14px; }
 .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
 .modal.open { display: flex; }
-.modal-box { background: #0E1420; border: 1px solid #1E2D45; border-radius: 16px; padding: 32px; width: 100%; max-width: 420px; }
+.modal-box { background: #0E1420; border: 1px solid #1E2D45; border-radius: 16px; padding: 32px; width: 100%; max-width: 480px; }
 .modal-box h3 { font-size: 18px; margin-bottom: 20px; }
 .modal-box label { display: block; font-size: 13px; color: #6B7A99; margin-bottom: 6px; margin-top: 14px; }
 .modal-box select, .modal-box input[type=number] { width: 100%; background: #141C2E; border: 1px solid #1E2D45; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #E8EDF5; outline: none; }
@@ -61,6 +60,8 @@ tr:hover td { background: #111825; }
 .modal-actions button { flex: 1; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
 .btn-save { background: #00E5A0; color: #000; }
 .btn-cancel { background: #1E2D45; color: #6B7A99; }
+.report-modal-box { background: #0E1420; border: 1px solid #1E2D45; border-radius: 16px; padding: 32px; width: 100%; max-width: 720px; max-height: 90vh; overflow-y: auto; position: relative; }
+.close-x { position: absolute; top: 16px; right: 20px; background: none; border: none; color: #6B7A99; font-size: 22px; cursor: pointer; }
 .toast { position: fixed; bottom: 30px; right: 30px; background: #0E1420; border: 1px solid #1E2D45; color: white; padding: 14px 20px; border-radius: 10px; font-size: 14px; z-index: 200; transform: translateY(120px); transition: transform 0.3s; }
 .toast.show { transform: translateY(0); }
 .toast.success { border-color: #00E5A0; color: #00E5A0; }
@@ -110,8 +111,8 @@ tr:hover td { background: #111825; }
       <div class="section-header"><h2>All Audit Reports</h2><button class="export-btn" onclick="exportCSV('reports')">Export CSV</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>User</th><th>File</th><th>Agent</th><th>Score</th><th>Compliance</th><th>Recommendation</th><th>Date</th></tr></thead>
-          <tbody id="reportsBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+          <thead><tr><th>User</th><th>File</th><th>Agent</th><th>Score</th><th>Compliance</th><th>Recommendation</th><th>Date</th><th style="min-width:190px">Actions</th></tr></thead>
+          <tbody id="reportsBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -128,15 +129,17 @@ tr:hover td { background: #111825; }
   </div>
 </div>
 
+<!-- EDIT USER MODAL -->
 <div class="modal" id="upgradeModal">
   <div class="modal-box">
     <h3>Edit User</h3>
     <input type="hidden" id="editEmail">
     <label>Plan</label>
-    <select id="editPlan">
-      <option value="trial">Trial</option>
-      <option value="pro">Pro</option>
-      <option value="enterprise">Enterprise</option>
+    <select id="editPlan" onchange="var m={trial:50,starter:300,pro:1000,enterprise:5000};var l=m[this.value];if(l)document.getElementById('editLimit').value=l;">
+      <option value="trial">Trial (50 calls)</option>
+      <option value="starter">Starter (300 calls)</option>
+      <option value="pro">Pro / Growth (1,000 calls)</option>
+      <option value="enterprise">Enterprise (5,000 calls)</option>
     </select>
     <label>Call Limit</label>
     <input type="number" id="editLimit" min="0" max="99999" value="50">
@@ -151,6 +154,15 @@ tr:hover td { background: #111825; }
     </div>
   </div>
 </div>
+
+<!-- REPORT DETAIL MODAL -->
+<div class="modal" id="reportModal">
+  <div class="report-modal-box">
+    <button class="close-x" onclick="document.getElementById('reportModal').classList.remove('open')">x</button>
+    <div id="reportModalBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -182,7 +194,9 @@ async function loadReports() {
   var res = await fetch('/admin/reports');
   var data = await res.json();
   allReports = data.reports || [];
-  renderReports(allReports);
+  if (document.getElementById('tabReports').classList.contains('active')) {
+    renderReports(allReports);
+  }
 }
 
 async function loadLeads() {
@@ -227,10 +241,11 @@ function renderUsers(users) {
     rows += '<td>' + joined + '</td>';
     rows += '<td>';
     rows += '<button class="action-btn" onclick="openUpgrade(\'' + u.email + '\',\'' + u.plan + '\',' + limit + ')">Edit</button>';
+    rows += '<button class="action-btn" onclick="viewUserReports(\'' + u.email + '\')" style="border-color:#6366f1;color:#6366f1">Reports</button>';
     if (u.is_active) {
-      rows += '<button class="action-btn danger" onclick="toggleUser(\'' + u.email + '\',false)">Disable</button>';
+      rows += '<button class="action-btn" onclick="toggleUser(\'' + u.email + '\',false)" style="border-color:#FF4060;color:#FF4060">Disable</button>';
     } else {
-      rows += '<button class="action-btn" onclick="toggleUser(\'' + u.email + '\',true)">Enable</button>';
+      rows += '<button class="action-btn" onclick="toggleUser(\'' + u.email + '\',true)" style="border-color:#00E5A0;color:#00E5A0">Enable</button>';
     }
     rows += '</td></tr>';
   }
@@ -239,21 +254,31 @@ function renderUsers(users) {
 
 function renderReports(reports) {
   var tbody = document.getElementById('reportsBody');
-  if (!reports.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No reports yet.</td></tr>'; return; }
+  if (!reports.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No reports yet.</td></tr>'; return; }
   var rows = '';
   for (var i = 0; i < reports.length; i++) {
     var r = reports[i];
-    var s = r.overall_score || 0;
-    var sc = s >= 8 ? '#00E5A0' : s >= 6 ? '#FFB800' : '#FF4060';
+    var isChecklist = r.mode === 'checklist';
+    var scoreVal = isChecklist ? parseFloat(r.overall_score) || 0 : r.overall_score || 0;
+    var maxS = isChecklist ? 85 : 10;
+    var pct = Math.round(scoreVal / maxS * 100) || 0;
+    var sc = pct >= 75 ? '#00E5A0' : pct >= 50 ? '#FFB800' : '#FF4060';
+    var scoreDisplay = isChecklist ? r.overall_score : scoreVal + '/10';
     var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
     rows += '<tr>';
     rows += '<td style="font-size:12px">' + (r.user_email || 'anon') + '</td>';
-    rows += '<td>' + (r.file || '-') + '</td>';
+    rows += '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + (r.file || '-') + '</td>';
     rows += '<td>' + (r.agent_name || '-') + '</td>';
-    rows += '<td><strong style="color:' + sc + '">' + s + '/10</strong></td>';
+    rows += '<td><strong style="color:' + sc + '">' + scoreDisplay + '</strong></td>';
     rows += '<td>' + (r.compliance_passed ? '<span style="color:#00E5A0">Pass</span>' : '<span style="color:#FF4060">Fail</span>') + '</td>';
-    rows += '<td>' + (r.recommendation || '').replace('_', ' ') + '</td>';
-    rows += '<td>' + date + '</td>';
+    rows += '<td style="font-size:12px">' + (r.recommendation || '').replace(/_/g, ' ') + '</td>';
+    rows += '<td style="font-size:12px">' + date + '</td>';
+    rows += '<td style="white-space:nowrap">';
+    rows += '<button class="action-btn" onclick="viewReport(\'' + r.audit_id + '\')" style="border-color:#00E5A0;color:#00E5A0;font-size:11px;padding:3px 8px">View</button> ';
+    rows += '<button class="action-btn" onclick="downloadReport(\'' + r.audit_id + '\')" style="font-size:11px;padding:3px 8px">DL</button> ';
+    rows += '<button class="action-btn" onclick="downloadRecording(\'' + r.audit_id + '\')" style="font-size:11px;padding:3px 8px">REC</button> ';
+    rows += '<button class="action-btn" onclick="deleteReport(\'' + r.audit_id + '\')" style="border-color:#FF4060;color:#FF4060;font-size:11px;padding:3px 8px">Del</button>';
+    rows += '</td>';
     rows += '</tr>';
   }
   tbody.innerHTML = rows;
@@ -283,6 +308,19 @@ function switchTab(tab) {
   document.querySelectorAll('.ptab').forEach(function(el, i) { el.classList.toggle('active', tabs[i] === tab); });
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+  if (tab === 'reports') renderReports(allReports);
+}
+
+function viewUserReports(email) {
+  switchTab('reports');
+  var filtered = allReports.filter(function(r) { return r.user_email === email; });
+  if (!filtered.length) {
+    document.getElementById('reportsBody').innerHTML = '<tr><td colspan="8" class="empty">No reports found for ' + email + '</td></tr>';
+    showToast('No reports for ' + email, 'error');
+    return;
+  }
+  renderReports(filtered);
+  showToast('Showing ' + filtered.length + ' reports for ' + email, 'success');
 }
 
 function openUpgrade(email, plan, limit) {
@@ -321,6 +359,106 @@ async function toggleUser(email, active) {
   if (!res.ok) { showToast('Error: ' + (data.detail || 'Failed'), 'error'); return; }
   showToast('User ' + (active ? 'enabled' : 'disabled'), 'success');
   loadUsers();
+}
+
+function downloadReport(auditId) {
+  window.open('/admin/report/download/' + auditId, '_blank');
+}
+
+function downloadRecording(auditId) {
+  window.open('/admin/recording/download/' + auditId, '_blank');
+}
+
+async function deleteReport(auditId) {
+  if (!confirm('Delete this report? This cannot be undone.')) return;
+  var res = await fetch('/admin/report/delete/' + auditId, { method: 'POST', credentials: 'include' });
+  if (res.ok) {
+    showToast('Report deleted', 'success');
+    allReports = allReports.filter(function(r) { return r.audit_id !== auditId; });
+    renderReports(allReports);
+  } else {
+    showToast('Delete failed', 'error');
+  }
+}
+
+async function viewReport(auditId) {
+  var res = await fetch('/admin/report/' + auditId);
+  if (!res.ok) { showToast('Report not found', 'error'); return; }
+  var r = await res.json();
+
+  var isChecklist = r.mode === 'checklist' || r.total_score !== undefined;
+  var s = isChecklist ? (r.total_score || 0) : (r.overall_score || 0);
+  var maxS = isChecklist ? (r.max_score || 85) : 10;
+  var pctS = Math.round(s / maxS * 100);
+  var sc = pctS >= 75 ? '#00E5A0' : pctS >= 50 ? '#FFB800' : '#FF4060';
+
+  var agentSpk = r.agent_speaker || 'SPEAKER_A';
+  var summary = (r.call_summary || 'No summary available.')
+    .replace(/The agent, SPEAKER_A/g, 'The agent').replace(/The agent, SPEAKER_B/g, 'The agent')
+    .replace(/the prospect, SPEAKER_A/g, 'the prospect').replace(/the prospect, SPEAKER_B/g, 'the prospect')
+    .replace(/SPEAKER_A/g, agentSpk === 'SPEAKER_A' ? 'Agent' : 'Customer')
+    .replace(/SPEAKER_B/g, agentSpk === 'SPEAKER_B' ? 'Agent' : 'Customer');
+  var transcript = (r.full_transcript || 'Not available')
+    .replace(/SPEAKER_A/g, agentSpk === 'SPEAKER_A' ? 'Agent' : 'Customer')
+    .replace(/SPEAKER_B/g, agentSpk === 'SPEAKER_B' ? 'Agent' : 'Customer');
+
+  var bodyScores = '';
+  if (isChecklist && r.checklist) {
+    bodyScores = '<div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Parameter Checklist</div>';
+    bodyScores += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">';
+    r.checklist.forEach(function(c) {
+      var bg = c.passed ? 'rgba(0,229,160,0.07)' : 'rgba(255,64,96,0.07)';
+      var bd = c.passed ? 'rgba(0,229,160,0.2)' : 'rgba(255,64,96,0.2)';
+      var pts = c.passed ? '+' + c.points_max : '0/' + c.points_max;
+      var ts = c.timestamp ? '<div style="font-size:10px;color:#4A5A72;margin-top:2px">&#9201; ' + c.timestamp + '</div>' : '';
+      bodyScores += '<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-radius:6px;background:' + bg + ';border:1px solid ' + bd + '">';
+      bodyScores += '<span style="font-size:13px;margin-top:1px">' + (c.passed ? '&#9989;' : '&#10060;') + '</span>';
+      bodyScores += '<div style="flex:1;font-size:12px;color:#C8D3E5">' + c.label + ts + '</div>';
+      bodyScores += '<span style="font-size:11px;font-weight:700;color:' + (c.passed ? '#00E5A0' : '#FF4060') + '">' + pts + ' pts</span>';
+      bodyScores += '</div>';
+    });
+    bodyScores += '</div>';
+  } else {
+    var scores = r.scores || {};
+    if (Object.keys(scores).length > 0) {
+      bodyScores = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">';
+      Object.entries(scores).forEach(function(e) {
+        var c = e[1] >= 8 ? '#00E5A0' : e[1] >= 6 ? '#FFB800' : '#FF4060';
+        bodyScores += '<div style="background:#141C2E;border-radius:8px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:700;color:' + c + '">' + e[1] + '</div><div style="font-size:11px;color:#6B7A99;margin-top:4px;text-transform:capitalize">' + e[0] + '</div></div>';
+      });
+      bodyScores += '</div>';
+    }
+  }
+
+  var flagsHtml = (r.flags||[]).map(function(f) { return '<div style="background:#1A1200;border-left:3px solid #FFB800;padding:8px 12px;border-radius:4px;margin-bottom:6px;font-size:13px">' + f + '</div>'; }).join('') || '<div style="color:#4A5A72;font-size:13px">None</div>';
+  var strHtml = (r.strengths||[]).map(function(s) { return '<div style="background:#001A0F;border-left:3px solid #00E5A0;padding:8px 12px;border-radius:4px;margin-bottom:6px;font-size:13px">' + s + '</div>'; }).join('') || '<div style="color:#4A5A72;font-size:13px">None</div>';
+  var impHtml = (r.improvement_areas||[]).map(function(s) { return '<div style="background:#0A0A1A;border-left:3px solid #6366f1;padding:8px 12px;border-radius:4px;margin-bottom:6px;font-size:13px">' + s + '</div>'; }).join('') || '<div style="color:#4A5A72;font-size:13px">None</div>';
+
+  document.getElementById('reportModalBody').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">' +
+      '<div>' +
+        '<div style="font-size:13px;color:#6B7A99;word-break:break-all">' + (r.file||'') + '</div>' +
+        '<div style="font-size:12px;color:#4A5A72;margin-top:4px">' + (r.user_email||'') + '</div>' +
+        '<div style="font-size:12px;color:#4A5A72">' + (r.audited_at ? new Date(r.audited_at).toLocaleString('en-IN') : '') + '</div>' +
+        (r.agent_name ? '<div style="font-size:13px;color:#C8D3E5;margin-top:4px">Agent: <strong>' + r.agent_name + '</strong></div>' : '') +
+      '</div>' +
+      '<div style="text-align:center;flex-shrink:0;margin-left:20px">' +
+        '<div style="font-size:36px;font-weight:800;color:' + sc + '">' + s + '<span style="font-size:16px;color:#4A5A72">/' + maxS + '</span></div>' +
+        '<div style="font-size:11px;color:#6B7A99">Score</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Summary</div>' +
+    '<div style="background:#141C2E;border-radius:8px;padding:14px;font-size:13px;color:#C8D3E5;margin-bottom:16px;line-height:1.6">' + summary + '</div>' +
+    bodyScores +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">' +
+      '<div><div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Flags</div>' + flagsHtml + '</div>' +
+      '<div><div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Strengths</div>' + strHtml + '</div>' +
+    '</div>' +
+    '<div style="margin-bottom:16px"><div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Coaching</div>' + impHtml + '</div>' +
+    '<div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Transcript</div>' +
+    '<div style="background:#141C2E;border-radius:8px;padding:14px;max-height:200px;overflow-y:auto;font-size:12px;line-height:1.8;white-space:pre-wrap;color:#8B9AB5">' + transcript + '</div>';
+
+  document.getElementById('reportModal').classList.add('open');
 }
 
 function exportCSV(type) {

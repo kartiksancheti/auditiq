@@ -19,6 +19,41 @@ DEFAULT_CRITERIA = """
 6. Closing: Did agent confirm resolution and close the call properly?
 """
 
+BURGER_SINGH_CRITERIA = [
+    # Group 1 — Greeting & Introduction (15 pts)
+    {"key": "greeting", "label": "Greeting done properly?", "points": 7.5, "group": "Greeting & Introduction", "negative": False},
+    {"key": "agent_intro", "label": "Agent introduced themselves by name?", "points": 2.5, "group": "Greeting & Introduction", "negative": False},
+    {"key": "company_info", "label": "Agent introduced the company (Burger Singh)?", "points": 5, "group": "Greeting & Introduction", "negative": False},
+
+    # Group 2 — Ask Right Questions (20 pts)
+    {"key": "location_pincode", "label": "Location & Pincode collected?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "prospect_name", "label": "Prospect name collected?", "hint": "check if prospect name was mentioned/used anywhere in call — agent may already have it in CRM so check if agent used the name while speaking, or prospect mentioned it, or agent confirmed it. Mark true if name appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
+    {"key": "prospect_phone", "label": "Prospect phone number collected?", "hint": "check if phone number was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect confirmed it, or it was mentioned anywhere. Mark true if phone number appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
+    {"key": "prospect_age", "label": "Prospect age collected?", "hint": "check if prospect age was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if age appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
+    {"key": "prospect_email", "label": "Prospect email collected?", "hint": "check if email was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if email appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
+    {"key": "reference", "label": "Reference — how did they hear about Burger Singh?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "profession", "label": "Prospect profession asked?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "shop_own_rent", "label": "Shop Own or Rent discussed?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "partnership_solo", "label": "Partnership or Solo discussed?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "timeline", "label": "Timeline to open outlet asked?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "oversee_store", "label": "Who will oversee the franchise store asked?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "agreed_25_lakhs", "label": "Prospect agreed/acknowledged 25 lakhs investment?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "time_dedication", "label": "Time dedication discussed?", "points": 2, "group": "Ask Right Questions", "negative": False},
+
+    # Group 3 — Explains Co-investment Model Correctly (25 pts)
+    {"key": "royalty_marketing", "label": "Royalty & Marketing explained?", "points": 5, "group": "Co-investment Model", "negative": False},
+    {"key": "ground_floor_sqft", "label": "250-400 sqft ground floor requirement explained?", "points": 5, "group": "Co-investment Model", "negative": False},
+    {"key": "biofrication_cost", "label": "25-20 Lakh Biofrication cost explained correctly?", "points": 15, "group": "Co-investment Model", "negative": False},
+
+    # Group 4 — Wrong Information / False Commitment (25 pts) — NEGATIVE
+    {"key": "no_guaranteed_roi", "label": "Did NOT promise guaranteed ROI/profit/fixed returns?", "points": 5, "group": "False Commitment", "negative": True},
+    {"key": "no_wrong_investment", "label": "Did NOT understate investment (₹25L / ignored taxes)?", "points": 5, "group": "False Commitment", "negative": True},
+    {"key": "no_reducing_involvement", "label": "Did NOT reduce involvement requirement (auto-pilot mode)?", "points": 5, "group": "False Commitment", "negative": True},
+    {"key": "no_guaranteed_sales", "label": "Did NOT promise guaranteed sales/revenue?", "points": 5, "group": "False Commitment", "negative": True},
+    {"key": "no_guaranteed_launch", "label": "Did NOT promise guaranteed launch timeline/approvals?", "points": 5, "group": "False Commitment", "negative": True},
+]
+
+
 async def transcribe_audio(file_path):
     print(f"[1/3] Transcribing: {file_path}")
     import asyncio
@@ -27,7 +62,6 @@ async def transcribe_audio(file_path):
     sarvam_key = os.getenv("SARVAM_API_KEY")
     client = SarvamAI(api_subscription_key=sarvam_key)
 
-    # Run blocking SDK calls in thread pool
     def run_transcription():
         import time
         # Step 1: Create job
@@ -48,7 +82,6 @@ async def transcribe_audio(file_path):
         import requests
         filename = os.path.basename(file_path)
         print(f"Upload URLs keys: {list(upload_links.upload_urls.keys())}")
-        # Try first available key if filename doesn't match
         key = filename if filename in upload_links.upload_urls else list(upload_links.upload_urls.keys())[0]
         upload_url = upload_links.upload_urls[key].file_url
         print(f"Uploading to: {upload_url[:80]}...")
@@ -69,18 +102,15 @@ async def transcribe_audio(file_path):
             s = str(status.job_state).lower()
             print(f"Status: {s} (attempt {attempt+1})")
             if "complete" in s or "success" in s or "done" in s:
-                # Step 5: Get output filenames from job details
                 output_files = []
                 if status.job_details:
                     for task in status.job_details:
                         for out in task.outputs:
                             output_files.append(out.file_name)
                 print(f"Output files: {output_files}")
-                
-                # Step 6: Get download links
+
                 links = client.speech_to_text_job.get_download_links(job_id=job_id, files=output_files)
-                
-                # Step 7: Fetch the result JSON
+
                 import requests as req
                 dl_urls = links.download_urls if hasattr(links, "download_urls") else links.download_links
                 first_key = list(dl_urls.keys())[0] if isinstance(dl_urls, dict) else 0
@@ -90,27 +120,25 @@ async def transcribe_audio(file_path):
                 return res.json()
             elif "fail" in s or "error" in s:
                 raise Exception(f"Sarvam job failed: {status}")
-        
+
         raise Exception("Sarvam transcription timed out")
 
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, run_transcription)
     return result
 
+
 def parse_transcript(dg):
-    # Handle Sarvam diarized response
     diarized = dg.get("diarized_transcript") or dg.get("transcript", {})
-    
-    # Handle Sarvam's diarized_transcript format with entries
+
     utterances = []
     if isinstance(diarized, dict):
-        utterances = (diarized.get("entries") or 
-                     diarized.get("utterances") or 
+        utterances = (diarized.get("entries") or
+                     diarized.get("utterances") or
                      diarized.get("segments") or [])
     elif isinstance(diarized, list):
         utterances = diarized
-    
-    # Fallback: try plain transcript
+
     if not utterances:
         plain = dg.get("transcript") or dg.get("text", "")
         if plain and isinstance(plain, str):
@@ -124,13 +152,12 @@ def parse_transcript(dg):
                 "utterance_count": 1,
             }
         return {"error": "No transcript found in Sarvam response"}
-    
+
     lines, agent_text, customer_text = [], [], []
     speakers = {}
     last_end = 0
     for utt in utterances:
-        # Sarvam uses speaker_id field
-        sid = (utt.get("speaker_id") or utt.get("speaker") or 
+        sid = (utt.get("speaker_id") or utt.get("speaker") or
                utt.get("spk_id") or "0")
         if sid not in speakers:
             label = f"SPEAKER_{chr(65 + len(speakers))}"
@@ -142,7 +169,7 @@ def parse_transcript(dg):
         if text:
             lines.append(f"[{start}s] {label}: {text}")
             agent_text.append(text) if label == "SPEAKER_A" else customer_text.append(text)
-    
+
     aw = sum(len(t.split()) for t in agent_text)
     cw = sum(len(t.split()) for t in customer_text)
     total = aw + cw or 1
@@ -155,6 +182,11 @@ def parse_transcript(dg):
         "total_duration": round(last_end, 1),
         "utterance_count": len(utterances),
     }
+
+
+# ─────────────────────────────────────────────
+# DEFAULT SCORING (existing clients - untouched)
+# ─────────────────────────────────────────────
 
 def score_call(td, criteria=DEFAULT_CRITERIA, client_context=""):
     print("[2/3] Scoring call with AI...")
@@ -173,6 +205,8 @@ QA CRITERIA:
 {criteria}
 
 {f"CLIENT CONTEXT: {client_context}" if client_context else ""}
+
+IMPORTANT: When generating flags, only flag issues with the AGENT's behaviour. Never flag customer statements as agent issues. Always check the speaker label at each timestamp before raising a flag.
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -194,7 +228,7 @@ Respond ONLY with valid JSON in this exact format:
   "flags": ["<specific issue found, with timestamp if possible>"],
   "strengths": ["<what agent did well>"],
   "improvement_areas": ["<specific coaching suggestion>"],
-  "call_summary": "<2-3 sentence summary of the call>",
+  "call_summary": "<2-3 sentence summary of the call. Do NOT use SPEAKER_A or SPEAKER_B — use Agent and Prospect instead>",
   "resolution_status": "<resolved|unresolved|escalated|follow_up_needed>",
   "recommendation": "<excellent|good|coaching_needed|critical_review>",
   "compliance_passed": <true|false>
@@ -212,9 +246,9 @@ Respond ONLY with valid JSON in this exact format:
             raw = raw[4:]
     return json.loads(raw)
 
+
 def generate_report(file_path, td, scores):
     print("[3/3] Generating report...")
-    # Relabel transcript with correct Agent/Customer labels
     agent_spk = scores.get("agent_speaker", "SPEAKER_A")
     fixed_lines = []
     for line in td.get("transcript", "").split("\n"):
@@ -247,6 +281,7 @@ def generate_report(file_path, td, scores):
         "full_transcript": td.get("transcript"),
     }
 
+
 async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", save_report=True):
     print(f"\n{'='*50}\nAuditing: {file_path}\n{'='*50}")
     dg = await transcribe_audio(file_path)
@@ -261,6 +296,7 @@ async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", sa
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"✅ Report saved: {rp}")
     return report
+
 
 async def audit_batch(folder_path, criteria=DEFAULT_CRITERIA):
     folder = Path(folder_path)
@@ -281,13 +317,166 @@ async def audit_batch(folder_path, criteria=DEFAULT_CRITERIA):
     print(f"\n✅ {len(results)} calls audited.")
     return results
 
+
+# ─────────────────────────────────────────────
+# CHECKLIST SCORING (Burger Singh demo)
+# ─────────────────────────────────────────────
+
+def score_call_checklist(td, criteria_list):
+    print("[2/3] Scoring call with checklist mode...")
+    keys_and_labels = "\n".join(
+        [f'{i+1}. [{c["group"]}] "{c["key"]}": {c.get("hint", c["label"])} ({c["points"]} pts){"  [NEGATIVE — return true if agent did NOT say this]" if c["negative"] else ""}' for i, c in enumerate(criteria_list)]
+    )
+    checks_json = ",\n    ".join([f'"{c["key"]}": {{"passed": <true|false>, "timestamp": "<start_time>s - <end_time>s or null if not found>"}}' for c in criteria_list])
+    prompt = f"""You are an expert Call QA Analyst for a franchise sales team (Burger Singh).
+
+Analyze this call transcript and evaluate each parameter below.
+
+TRANSCRIPT:
+{td.get("transcript")}
+
+IMPORTANT RULES:
+- Only evaluate AGENT behaviour, never customer statements.
+- For NEGATIVE parameters: return true if agent did NOT say the wrong thing, false if agent DID make that false commitment.
+- For POSITIVE parameters: return true if agent covered it, false if missed.
+- Always check speaker labels before making a judgement.
+- For timestamp: find where in the transcript the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null.
+- Timestamps must come directly from the transcript timestamps shown as [Xs] at the start of each line.
+
+PARAMETERS TO EVALUATE:
+{keys_and_labels}
+
+Respond ONLY with valid JSON in this exact format:
+{{
+  "agent_speaker": "<SPEAKER_A or SPEAKER_B — whichever is the agent>",
+  "checks": {{
+    {checks_json}
+  }},
+  "call_summary": "<2-3 sentence summary of the call. Do NOT use SPEAKER_A or SPEAKER_B — use Agent and Prospect instead>",
+  "flags": ["<flag only if agent did any of these — with timestamp: (1) Made false commitment like guaranteed ROI/profit/launch/sales, (2) Understated investment amount or ignored taxes, (3) Said business runs on auto-pilot or no time needed, (4) Could not answer prospect question, (5) Interrupted or was rude to prospect, (6) Gave wrong royalty/marketing percentage, (7) Ended call without scheduling follow-up, (8) Long silence over 10 seconds>"],
+  "strengths": ["<mention only if agent did any of these: (1) Built good rapport naturally, (2) Handled objections confidently, (3) Explained co-investment model clearly, (4) Collected all required prospect information, (5) Scheduled follow-up call, (6) Stayed calm under pressure, (7) Gave accurate investment and royalty information>"],
+  "improvement_areas": ["<specific coaching suggestion based on what was missed or done incorrectly in this call>"]
+}}"""
+
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        max_tokens=800,
+    )
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw)
+
+
+def generate_report_checklist(file_path, td, scores, criteria_list):
+    print("[3/3] Generating checklist report...")
+    agent_spk = scores.get("agent_speaker", "SPEAKER_A")
+    fixed_lines = []
+    for line in td.get("transcript", "").split("\n"):
+        for spk in ["SPEAKER_A", "SPEAKER_B"]:
+            label = "Agent" if spk == agent_spk else "Customer"
+            line = line.replace(spk, label)
+        fixed_lines.append(line)
+    td["transcript"] = "\n".join(fixed_lines)
+
+    checks = scores.get("checks", {})
+
+    checklist_result = []
+    total_score = 0
+    max_score = 0
+    for c in criteria_list:
+        check_data = checks.get(c["key"], {})
+        # Handle both old format (bool) and new format (dict)
+        if isinstance(check_data, dict):
+            passed = check_data.get("passed", False)
+            timestamp = check_data.get("timestamp", None)
+        else:
+            passed = bool(check_data)
+            timestamp = None
+        pts = c["points"]
+        max_score += pts
+        earned = pts if passed else 0
+        total_score += earned
+        checklist_result.append({
+            "label": c["label"],
+            "key": c["key"],
+            "passed": passed,
+            "timestamp": timestamp,
+            "points_earned": earned,
+            "points_max": pts,
+            "group": c["group"],
+            "negative": c["negative"]
+        })
+
+    return {
+        "audit_id": f"AUDIT_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        "file": Path(file_path).name,
+        "audited_at": datetime.now().isoformat(),
+        "mode": "checklist",
+        "client": "burger_singh_demo",
+        "agent_speaker": agent_spk,
+        "call_metadata": {
+            "duration_seconds": td.get("total_duration"),
+            "agent_talk_ratio": td.get("agent_talk_ratio"),
+            "customer_talk_ratio": td.get("customer_talk_ratio"),
+            "total_turns": td.get("utterance_count"),
+        },
+        "checklist": checklist_result,
+        "total_score": round(total_score, 1),
+        "max_score": max_score,
+        "score_display": f"{round(total_score, 1)}/{max_score}",
+        "call_summary": scores.get("call_summary"),
+        "flags": scores.get("flags", []),
+        "strengths": scores.get("strengths", []),
+        "improvement_areas": scores.get("improvement_areas", []),
+        "full_transcript": td.get("transcript"),
+    }
+
+
+async def audit_call_checklist(file_path, criteria_list=BURGER_SINGH_CRITERIA):
+    print(f"\n{'='*50}\nChecklist Audit: {file_path}\n{'='*50}")
+    dg = await transcribe_audio(file_path)
+    td = parse_transcript(dg)
+    if "error" in td:
+        return {"error": td["error"], "file": file_path}
+    scores = score_call_checklist(td, criteria_list)
+    report = generate_report_checklist(file_path, td, scores, criteria_list)
+    rp = Path(file_path).with_suffix(".checklist.json")
+    with open(rp, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f"\n✅ Checklist report saved: {rp}")
+    print(f"\n📊 Score: {report['score_display']} checks covered")
+    print("─" * 40)
+    for item in report["checklist"]:
+        icon = "✅" if item["passed"] else "❌"
+        print(f"   {icon}  {item['label']}")
+    print("─" * 40)
+    print(f"Summary: {report['call_summary']}")
+    return report
+
+
+# ─────────────────────────────────────────────
+# ENTRY POINT
+# ─────────────────────────────────────────────
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("Usage: python auditor.py call.mp3")
+        print("Usage:")
+        print("  python auditor.py call.mp3              # standard audit")
+        print("  python auditor.py call.mp3 --checklist  # Burger Singh checklist audit")
         sys.exit(1)
+
     path = sys.argv[1]
-    if Path(path).is_dir():
+    mode = sys.argv[2] if len(sys.argv) > 2 else ""
+
+    if mode == "--checklist":
+        report = asyncio.run(audit_call_checklist(path))
+    elif Path(path).is_dir():
         asyncio.run(audit_batch(path))
     else:
         report = asyncio.run(audit_call(path))

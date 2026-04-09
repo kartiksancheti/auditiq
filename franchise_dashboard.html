@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditIQ — Franchise Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+.header { background: #1a1a2e; color: white; padding: 16px 30px; display: flex; align-items: center; justify-content: space-between; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 18px; font-weight: 700; color: white; }
+.logo span { color: #00E5A0; }
+.badge { background: #e94560; color: white; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.usage-pill { background: #1E2D45; color: #aaa; padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.logout-btn { background: none; border: 1px solid #333; color: #777; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.logout-btn:hover { border-color: #e94560; color: #e94560; }
+.container { max-width: 900px; margin: 0 auto; padding: 28px 24px; }
+
+/* UPLOAD CARD */
+.card { background: white; border-radius: 12px; padding: 28px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h2 { font-size: 15px; color: #555; font-weight: 600; margin-bottom: 20px; }
+.fg { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.fg label { font-size: 13px; color: #666; font-weight: 500; }
+.fg label span { color: #e94560; }
+.fg input { border: 1px solid #ddd; border-radius: 8px; padding: 10px 14px; font-size: 14px; outline: none; }
+.fg input:focus { border-color: #e94560; }
+.drop-zone { border: 2px dashed #ddd; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; }
+.drop-zone:hover, .drop-zone.active { border-color: #e94560; background: #fff5f7; }
+.drop-zone p { color: #888; font-size: 13px; margin-top: 8px; }
+.btn { background: #e94560; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600; transition: background 0.2s; width: 100%; margin-top: 8px; }
+.btn:hover { background: #c73652; }
+.btn:disabled { background: #ccc; cursor: not-allowed; }
+.progress { display: none; margin-top: 14px; background: #f0f0f0; border-radius: 6px; overflow: hidden; height: 6px; }
+.progress-bar { height: 100%; background: #00E5A0; width: 0%; transition: width 0.3s; border-radius: 6px; }
+.status-msg { font-size: 13px; color: #888; margin-top: 10px; text-align: center; display: none; }
+
+/* REPORTS TABLE */
+.reports-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; }
+.reports-header { padding: 18px 24px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.reports-header h2 { font-size: 15px; color: #555; font-weight: 600; }
+.reports-controls { display: flex; gap: 10px; align-items: center; }
+.filter-select { border: 1px solid #ddd; border-radius: 8px; padding: 6px 12px; font-size: 13px; outline: none; color: #555; }
+.export-btn { background: #1a1a2e; color: #00E5A0; border: 1px solid #2A3A52; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.export-btn:hover { background: #2A3A52; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #f8f9fa; padding: 11px 16px; text-align: left; font-size: 11px; color: #888; text-transform: uppercase; }
+td { padding: 13px 16px; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+tr:hover td { background: #fafafa; }
+.score-pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-weight: 700; font-size: 12px; }
+.score-high { background: #dcfce7; color: #16a34a; }
+.score-mid { background: #fef9c3; color: #ca8a04; }
+.score-low { background: #fee2e2; color: #dc2626; }
+.view-btn { background: none; border: 1px solid #00E5A0; color: #00E5A0; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
+.view-btn:hover { background: #00E5A0; color: #000; }
+.empty { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+
+/* MODAL */
+.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; overflow-y: auto; }
+.modal.open { display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+.modal-content { background: white; border-radius: 16px; padding: 30px; max-width: 750px; width: 100%; position: relative; }
+.modal-close { position: absolute; top: 16px; right: 20px; background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
+.groups-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+.group-card { background: #f8f9fa; border-radius: 10px; padding: 14px 16px; }
+.group-card .g-name { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
+.group-card .g-score { font-size: 20px; font-weight: 800; }
+.group-card .g-bar { height: 4px; background: #e5e7eb; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.group-card .g-fill { height: 100%; border-radius: 2px; }
+.checklist-list { display: flex; flex-direction: column; gap: 8px; }
+.check-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; border-radius: 8px; }
+.check-row.pass { background: #f0fdf4; border: 1px solid #bbf7d0; }
+.check-row.fail { background: #fff5f5; border: 1px solid #fecaca; }
+.check-icon { font-size: 14px; flex-shrink: 0; margin-top: 2px; }
+.check-label { font-size: 13px; flex: 1; color: #333; }
+.check-ts { font-size: 11px; color: #888; margin-top: 3px; }
+.check-pts { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.check-row.pass .check-pts { color: #16a34a; }
+.check-row.fail .check-pts { color: #dc2626; }
+.sec-title { font-size: 12px; font-weight: 600; color: #555; text-transform: uppercase; margin: 16px 0 8px; }
+.summary-box { background: #f8f9fa; border-radius: 8px; padding: 14px; font-size: 13px; color: #444; line-height: 1.7; border-left: 3px solid #00E5A0; margin-bottom: 16px; }
+.flag-item { background: #fff8e6; border-left: 3px solid #f59e0b; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; }
+.str-item { background: #f0fdf4; border-left: 3px solid #22c55e; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 6px; }
+.transcript-box { background: #f8f9fa; border-radius: 8px; padding: 14px; max-height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.8; white-space: pre-wrap; color: #555; }
+
+.toast { position: fixed; bottom: 30px; right: 30px; background: #1a1a2e; color: white; padding: 14px 20px; border-radius: 10px; font-size: 14px; z-index: 200; transform: translateY(120px); transition: transform 0.3s; }
+.toast.show { transform: translateY(0); }
+.toast.success { border: 1px solid #00E5A0; color: #00E5A0; }
+.toast.error { border: 1px solid #e94560; color: #e94560; }
+
+@media (max-width: 768px) {
+  .container { padding: 14px; }
+  .groups-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">Audit<span>IQ</span></div>
+    <span class="badge">Franchise QA</span>
+  </div>
+  <div class="header-right">
+    <span class="usage-pill" id="usagePill">Loading...</span>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</div>
+
+<div class="container">
+  <!-- UPLOAD CARD -->
+  <div class="card">
+    <h2>🎙️ Audit a Franchise Call</h2>
+    <div class="fg">
+      <label>Agent Name <span>*</span></label>
+      <input type="text" id="agentName" placeholder="e.g. Amit Sharma" required>
+    </div>
+    <div class="fg">
+      <label>Audio File <span>*</span></label>
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('audioFile').click()">
+        <div style="font-size:32px">🎵</div>
+        <strong id="fileLabel">Click to select audio file</strong>
+        <p>Supports MP3, WAV, M4A, OGG</p>
+      </div>
+      <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg" style="display:none" onchange="onFileSelect(this)">
+    </div>
+    <button class="btn" id="auditBtn" onclick="doAudit()">🔍 Audit Call</button>
+    <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <!-- REPORTS -->
+  <div class="reports-card">
+    <div class="reports-header">
+      <h2>Franchise Call Reports</h2>
+      <div class="reports-controls">
+        <select class="filter-select" id="agentFilter" onchange="filterReports()">
+          <option value="">All Agents</option>
+        </select>
+        <button class="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
+      </div>
+    </div>
+    <div id="tableWrap"><div class="empty">Loading reports...</div></div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal" id="reportModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var allReports = [];
+var currentUser = null;
+
+var SESSION_TOKEN = null;
+var isProcessing = false;
+window.onbeforeunload = function() {
+  if (isProcessing) return "Call is being audited. Leaving now will cancel the audit. Are you sure?";
+};
+
+async function boot() {
+  var params = new URLSearchParams(window.location.search);
+  SESSION_TOKEN = params.get('token') || localStorage.getItem('auditiq_session') || getCookie('session');
+  
+  if (!SESSION_TOKEN) { window.location.href = '/login'; return; }
+
+  // Store token in sessionStorage so it persists on page
+  if (params.get('token')) {
+    localStorage.setItem('auditiq_session', params.get('token'));
+    // Clean URL without reloading
+    window.history.replaceState({}, '', '/franchise-dashboard');
+  } else {
+    SESSION_TOKEN = localStorage.getItem('auditiq_session') || getCookie('session');
+  }
+
+  try {
+    var res = await fetch('/auth/me', {
+      headers: {'X-Session-Token': SESSION_TOKEN},
+      credentials: 'include'
+    });
+    if (!res.ok) { window.location.href = '/login'; return; }
+    currentUser = await res.json();
+    document.getElementById('usagePill').textContent = (currentUser.calls_limit - currentUser.calls_used) + ' calls left';
+    loadReports();
+  } catch(e) {
+    window.location.href = '/login';
+  }
+}
+
+function getCookie(name) {
+  var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+  return v ? v[2] : null;
+}
+
+async function loadReports() {
+  try {
+    var res = await fetch('/checklist-reports-list', {headers: {'X-Session-Token': SESSION_TOKEN}});
+    var data = await res.json();
+    allReports = data.reports || [];
+    populateAgentFilter();
+    renderTable(allReports);
+  } catch(e) {
+    document.getElementById('tableWrap').innerHTML = '<div class="empty">Error loading reports.</div>';
+  }
+}
+
+function populateAgentFilter() {
+  var agents = [...new Set(allReports.map(r => r.agent_name).filter(Boolean))].sort();
+  var select = document.getElementById('agentFilter');
+  select.innerHTML = '<option value="">All Agents</option>';
+  agents.forEach(function(a) {
+    select.innerHTML += '<option value="' + a + '">' + a + '</option>';
+  });
+}
+
+function filterReports() {
+  var agent = document.getElementById('agentFilter').value;
+  var filtered = agent ? allReports.filter(r => r.agent_name === agent) : allReports;
+  renderTable(filtered);
+}
+
+function renderTable(reports) {
+  if (!reports.length) {
+    document.getElementById('tableWrap').innerHTML = '<div class="empty">No reports found.</div>';
+    return;
+  }
+  var rows = '';
+  reports.forEach(function(r, i) {
+    var score = r.total_score || 0;
+    var max = r.max_score || 85;
+    var pct = Math.round(score / max * 100);
+    var pillClass = pct >= 75 ? 'score-high' : pct >= 50 ? 'score-mid' : 'score-low';
+    var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
+    var duration = r.call_metadata && r.call_metadata.duration_seconds ? formatDuration(r.call_metadata.duration_seconds) : '-';
+    rows += '<tr>';
+    rows += '<td style="font-weight:600">' + (r.agent_name || '—') + '</td>';
+    rows += '<td style="font-size:11px;color:#888;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.file || '-') + '</td>';
+    rows += '<td>' + duration + '</td>';
+    rows += '<td><span class="score-pill ' + pillClass + '">' + score + '/' + max + '</span></td>';
+    rows += '<td style="color:#888">' + pct + '%</td>';
+    rows += '<td>' + date + '</td>';
+    rows += '<td><button class="view-btn" onclick="viewReport(' + i + ')">View</button></td>';
+    rows += '</tr>';
+  });
+  document.getElementById('tableWrap').innerHTML = '<table><thead><tr><th>Agent</th><th>File</th><th>Duration</th><th>Score</th><th>%</th><th>Date</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function onFileSelect(input) {
+  var file = input.files[0];
+  if (file) {
+    document.getElementById('fileLabel').textContent = file.name;
+    document.getElementById('dropZone').classList.add('active');
+  }
+}
+
+async function doAudit() {
+  var agentName = document.getElementById('agentName').value.trim();
+  var file = document.getElementById('audioFile').files[0];
+
+  if (!agentName) { showToast('Agent name is required', 'error'); return; }
+  if (!file) { showToast('Please select an audio file', 'error'); return; }
+
+  var btn = document.getElementById('auditBtn');
+  var progress = document.getElementById('progress');
+  var progressBar = document.getElementById('progressBar');
+  var statusMsg = document.getElementById('statusMsg');
+
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  isProcessing = true;
+  progress.style.display = 'block';
+  statusMsg.style.display = 'block';
+
+  // Simulate progress
+  var pct = 0;
+  statusMsg.textContent = '⏳ Transcribing call...';
+  var interval = setInterval(function() {
+    pct = Math.min(pct + 2, 85);
+    progressBar.style.width = pct + '%';
+  }, 1000);
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('agent_name', agentName);
+
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get('token') || getCookie('session');
+  var headers = token ? {'X-Session-Token': token} : {};
+
+  try {
+    statusMsg.textContent = '🧠 AI scoring against 20 parameters...';
+    var res = await fetch('/audit/franchise', {
+      method: 'POST',
+      headers: {'X-Session-Token': SESSION_TOKEN},
+      credentials: 'include',
+      body: fd
+    });
+
+    clearInterval(interval);
+
+    if (!res.ok) {
+      var err = await res.json();
+      throw new Error(err.detail || 'Audit failed');
+    }
+
+    var report = await res.json();
+    progressBar.style.width = '100%';
+    statusMsg.textContent = '✅ Done! Score: ' + report.score_display;
+
+    // Update usage pill
+    document.getElementById('usagePill').textContent = (report.calls_limit - report.calls_used) + ' calls left';
+
+    showToast('✅ Audit complete: ' + report.score_display, 'success');
+    
+    // Load reports immediately
+    loadReports();
+
+    // Reset form after 2 seconds
+    setTimeout(function() {
+      document.getElementById('agentName').value = '';
+      document.getElementById('audioFile').value = '';
+      document.getElementById('fileLabel').textContent = 'Click to select audio file';
+      document.getElementById('dropZone').classList.remove('active');
+      progress.style.display = 'none';
+      progressBar.style.width = '0%';
+      statusMsg.style.display = 'none';
+      btn.disabled = false;
+      btn.textContent = '🔍 Audit Call';
+      isProcessing = false;
+    }, 2000);
+
+  } catch(e) {
+    clearInterval(interval);
+    showToast('❌ ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '🔍 Audit Call';
+    isProcessing = false;
+    progress.style.display = 'none';
+    statusMsg.style.display = 'none';
+  }
+}
+
+function viewReport(idx) {
+  var reports = allReports;
+  var agent = document.getElementById('agentFilter').value;
+  if (agent) reports = allReports.filter(r => r.agent_name === agent);
+  var r = reports[idx];
+
+  var score = r.total_score || 0;
+  var max = r.max_score || 85;
+  var pct = Math.round(score / max * 100);
+  var scoreColor = pct >= 75 ? '#16a34a' : pct >= 50 ? '#ca8a04' : '#dc2626';
+
+  // Group scores
+  var groups = {}, groupMax = {};
+  (r.checklist || []).forEach(function(c) {
+    if (!groups[c.group]) { groups[c.group] = 0; groupMax[c.group] = 0; }
+    groups[c.group] += c.points_earned || 0;
+    groupMax[c.group] += c.points_max || 0;
+  });
+
+  var groupHtml = Object.keys(groups).map(function(g) {
+    var gScore = groups[g];
+    var gMax = groupMax[g];
+    var gPct = Math.round(gScore / gMax * 100);
+    var gColor = gPct >= 75 ? '#16a34a' : gPct >= 50 ? '#ca8a04' : '#dc2626';
+    return '<div class="group-card"><div class="g-name">' + g + '</div><div class="g-score" style="color:' + gColor + '">' + gScore + '/' + gMax + ' <span style="font-size:12px;color:#aaa">(' + gPct + '%)</span></div><div class="g-bar"><div class="g-fill" style="width:' + gPct + '%;background:' + gColor + '"></div></div></div>';
+  }).join('');
+
+  var checkHtml = (r.checklist || []).map(function(c) {
+    var icon = c.passed ? '✅' : '❌';
+    var pts = c.passed ? '+' + c.points_max : '0/' + c.points_max;
+    var ts = c.timestamp ? '<div class="check-ts">⏱ ' + c.timestamp + '</div>' : '';
+    return '<div class="check-row ' + (c.passed ? 'pass' : 'fail') + '"><span class="check-icon">' + icon + '</span><div style="flex:1"><div class="check-label">' + c.label + '</div>' + ts + '</div><span class="check-pts">' + pts + ' pts</span></div>';
+  }).join('');
+
+  var flags = (r.flags || []).map(function(f) { return '<div class="flag-item">' + f + '</div>'; }).join('') || '<div style="color:#bbb;font-size:13px">None</div>';
+  var strengths = (r.strengths || []).map(function(s) { return '<div class="str-item">' + s + '</div>'; }).join('') || '<div style="color:#bbb;font-size:13px">None</div>';
+
+  document.getElementById('modalBody').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>
+        <div style="font-size:11px;color:#aaa;margin-bottom:4px">FRANCHISE CALL AUDIT</div>
+        <div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:2px">${r.agent_name || 'Agent'}</div>
+        <div style="font-size:12px;color:#888">${r.file || ''} · ${r.audited_at ? new Date(r.audited_at).toLocaleString('en-IN') : ''}</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:38px;font-weight:800;color:${scoreColor};line-height:1">${score}<span style="font-size:16px;color:#ccc">/${max}</span></div>
+        <div style="font-size:11px;color:#aaa">${pct}% Score</div>
+      </div>
+    </div>
+    <div class="sec-title">Score by Group</div>
+    <div class="groups-grid">${groupHtml}</div>
+    <div class="sec-title">Call Summary</div>
+    <div class="summary-box">${r.call_summary || '—'}</div>
+    <div class="sec-title">Parameter Checklist</div>
+    <div class="checklist-list">${checkHtml}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div><div class="sec-title">⚠️ Flags</div>${flags}</div>
+      <div><div class="sec-title">💪 Strengths</div>${strengths}</div>
+    </div>
+    <div class="sec-title" style="margin-top:16px">📄 Transcript</div>
+    <div class="transcript-box">${r.full_transcript || 'Not available'}</div>
+  `;
+  document.getElementById('reportModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('reportModal').classList.remove('open'); }
+
+function exportCSV() {
+  var agent = document.getElementById('agentFilter').value;
+  var reports = agent ? allReports.filter(r => r.agent_name === agent) : allReports;
+  if (!reports.length) { showToast('No reports to export', 'error'); return; }
+
+  // Build horizontal headers from first report checklist
+  var paramHeaders = (reports[0].checklist || []).map(function(c) { return c.label; });
+  var headers = ['Agent', 'File', 'Duration', 'Score', 'Max Score', '%', 'Date'].concat(paramHeaders);
+
+  var rows = [headers];
+  reports.forEach(function(r) {
+    var score = r.total_score || 0;
+    var max = r.max_score || 85;
+    var pct = Math.round(score / max * 100);
+    var duration = r.call_metadata && r.call_metadata.duration_seconds ? formatDuration(r.call_metadata.duration_seconds) : '-';
+    var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
+    var row = [r.agent_name || '', r.file || '', duration, score, max, pct + '%', date];
+    // Add each parameter as a column
+    (r.checklist || []).forEach(function(c) {
+      row.push(c.passed ? 'COVERED (' + c.points_earned + '/' + c.points_max + ')' : 'MISSED (0/' + c.points_max + ')');
+    });
+    rows.push(row);
+  });
+
+  var csv = rows.map(function(r) {
+    return r.map(function(v) { return '"' + String(v || '').replace(/"/g, '""') + '"'; }).join(',');
+  }).join('\n');
+
+  var filename = (agent || 'all_agents') + '_franchise_audit_' + new Date().toISOString().slice(0,10) + '.csv';
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
+  a.download = filename;
+  a.click();
+  showToast('✅ CSV downloaded', 'success');
+}
+
+function formatDuration(sec) {
+  var m = Math.floor(sec / 60);
+  var s = Math.floor(sec % 60);
+  return m + 'm ' + s + 's';
+}
+
+function logout() {
+  localStorage.removeItem('auditiq_session');
+  document.cookie = 'session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+  window.location.href = '/login';
+}
+
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type || '');
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 4000);
+}
+
+window.onclick = function(e) {
+  if (e.target === document.getElementById('reportModal')) closeModal();
+}
+
+boot();
+</script>
+</body>
+</html>

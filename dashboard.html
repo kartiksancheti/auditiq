@@ -257,6 +257,7 @@ async function submitAudit() {
   const btn = document.getElementById('auditBtn');
   const loading = document.getElementById('loading');
   btn.disabled = true;
+  isProcessing = true;
   loading.classList.add('show');
   const fd = new FormData();
   fd.append('file', fileInput.files[0]);
