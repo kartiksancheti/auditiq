@@ -447,6 +447,33 @@ async function viewReport(auditId) {
         '<div style="font-size:11px;color:#6B7A99">Score</div>' +
       '</div>' +
     '</div>' +
+    (function() {
+      var h = r.call_health || {};
+      if (!h.overall_health) return '';
+      var pct = h.overall_health || 0;
+      var color = pct >= 80 ? '#00E5A0' : pct >= 60 ? '#FFB800' : '#FF4060';
+      var label = h.health_label || (pct >= 80 ? 'Excellent' : pct >= 60 ? 'Good' : 'Needs Coaching');
+      return '<div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Overall Call Health</div>' +
+        '<div style="background:#141C2E;border-radius:10px;padding:16px;margin-bottom:16px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+            '<span style="font-size:24px;font-weight:800;color:' + color + '">' + pct + '%</span>' +
+            '<span style="color:' + color + ';font-size:13px;font-weight:700">' + label + '</span>' +
+          '</div>' +
+          '<div style="background:#1E2D45;border-radius:4px;height:8px;margin-bottom:12px"><div style="background:' + color + ';width:' + pct + '%;height:100%;border-radius:4px"></div></div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+            '<div style="background:#0A0F1A;border-radius:8px;padding:12px">' +
+              '<div style="font-size:11px;color:#4A5A72;margin-bottom:4px">EMPATHY</div>' +
+              '<div style="font-size:20px;font-weight:700;color:#C8D3E5">' + (h.empathy_score||'-') + '/10</div>' +
+              '<div style="font-size:11px;color:#6B7A99;margin-top:4px">' + (h.empathy_note||'') + '</div>' +
+            '</div>' +
+            '<div style="background:#0A0F1A;border-radius:8px;padding:12px">' +
+              '<div style="font-size:11px;color:#4A5A72;margin-bottom:4px">ENTHUSIASM</div>' +
+              '<div style="font-size:20px;font-weight:700;color:#C8D3E5">' + (h.enthusiasm_score||'-') + '/10</div>' +
+              '<div style="font-size:11px;color:#6B7A99;margin-top:4px">' + (h.enthusiasm_note||'') + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    })() +
     '<div style="font-size:12px;color:#6B7A99;margin-bottom:8px;text-transform:uppercase">Summary</div>' +
     '<div style="background:#141C2E;border-radius:8px;padding:14px;font-size:13px;color:#C8D3E5;margin-bottom:16px;line-height:1.6">' + summary + '</div>' +
     bodyScores +

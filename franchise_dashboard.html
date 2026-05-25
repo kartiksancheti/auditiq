@@ -185,7 +185,8 @@ async function boot() {
       credentials: 'include'
     });
     if (!res.ok) { window.location.href = '/login'; return; }
-    currentUser = await res.json();
+    var meText = await res.text();
+    try { currentUser = JSON.parse(meText); } catch(e) { console.error('auth/me bad response:', meText.substring(0,200)); return; }
     document.getElementById('usagePill').textContent = (currentUser.calls_limit - currentUser.calls_used) + ' calls left';
     loadReports();
   } catch(e) {
@@ -201,7 +202,9 @@ function getCookie(name) {
 async function loadReports() {
   try {
     var res = await fetch('/checklist-reports-list', {headers: {'X-Session-Token': SESSION_TOKEN}});
-    var data = await res.json();
+    var listText = await res.text();
+    var data = {};
+    try { data = JSON.parse(listText); } catch(e) { console.error('checklist-reports-list bad response:', listText.substring(0,200)); data = {reports:[]}; }
     allReports = data.reports || [];
     populateAgentFilter();
     renderTable(allReports);
@@ -305,11 +308,15 @@ async function doAudit() {
     clearInterval(interval);
 
     if (!res.ok) {
-      var err = await res.json();
+      var errText = await res.text();
+      var err = {};
+      try { err = JSON.parse(errText); } catch(e) { err = {detail: errText.substring(0, 200)}; }
       throw new Error(err.detail || 'Audit failed');
     }
 
-    var report = await res.json();
+    var reportText = await res.text();
+    var report = {};
+    try { report = JSON.parse(reportText); } catch(e) { throw new Error('Server returned invalid response. Please try again.'); }
     progressBar.style.width = '100%';
     statusMsg.textContent = '✅ Done! Score: ' + report.score_display;
 

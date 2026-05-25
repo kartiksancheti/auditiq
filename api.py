@@ -40,6 +40,11 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY", "auditi
 
 UPLOAD_DIR = Path("uploads")
 FRANCHISE_CLIENTS = {"salim@delightservices.in", "musicbeats897@gmail.com"}
+
+FRANCHISE_USERS = {
+    "salim@delightservices.in": os.getenv("FRANCHISE_PASSWORD_SALIM", "delight2024"),
+    "musicbeats897@gmail.com":  os.getenv("FRANCHISE_PASSWORD_MUSIC", "music2024"),
+}
 REPORTS_DIR = Path("reports")
 UPLOAD_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
@@ -80,23 +85,45 @@ async def delete_report(audit_id: str, admin_session: str = Cookie(default=None)
     if not verify_admin_session(admin_session):
         raise HTTPException(401, "Not authenticated")
     deleted = False
+    user_email = None
+
+    # Try standard report
     for path in [Path(f"reports/{audit_id}.json"), Path(f"reports/{audit_id}.checklist.json")]:
         if path.exists():
+            with open(path) as f:
+                d = json.load(f)
+            user_email = d.get("user_email")
             path.unlink()
             deleted = True
+
+    # Search checklist reports by audit_id field
     if not deleted:
         for rf in Path("reports").glob("*.checklist.json"):
             try:
                 with open(rf) as f:
                     d = json.load(f)
                 if d.get("audit_id") == audit_id:
+                    user_email = d.get("user_email")
                     rf.unlink()
                     deleted = True
                     break
             except:
                 continue
+
     if not deleted:
         raise HTTPException(404, "Report not found")
+
+    # Decrement calls_used for the user
+    if user_email and user_email != "anonymous":
+        try:
+            import sqlite3 as _sq
+            conn = _sq.connect("leads.db")
+            conn.execute("UPDATE users SET calls_used = MAX(0, calls_used - 1) WHERE email = ?", (user_email,))
+            conn.commit()
+            conn.close()
+        except:
+            pass
+
     return {"success": True}
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -731,14 +758,20 @@ async def dashboard(request: Request, session: str = Cookie(default=None)):
 
 @app.get("/franchise-dashboard", response_class=HTMLResponse)
 async def franchise_dashboard(request: Request, session: str = Cookie(default=None)):
-    # Let JS handle auth - just serve the HTML
-    # Server side check only if token is in URL or cookie
+    # Check franchise password-based session cookie first
+    franchise_session = request.cookies.get("franchise_session")
+    if franchise_session:
+        user_email = verify_franchise_session(franchise_session)
+        if user_email:
+            return open("franchise_dashboard.html").read()
+        return RedirectResponse(url="/franchise/login")
+    # Fallback: magic-link token access
     token = request.query_params.get("token") or request.headers.get("X-Session-Token") or session
     if token:
         user = verify_session_token(token)
-        if user and user.get("email") not in FRANCHISE_CLIENTS:
-            return RedirectResponse(url="/login")
-    return open("franchise_dashboard.html").read()
+        if user and user.get("email") in FRANCHISE_CLIENTS:
+            return open("franchise_dashboard.html").read()
+    return RedirectResponse(url="/franchise/login")
 
 @app.post("/audit/franchise")
 async def audit_franchise_call(
@@ -779,6 +812,8 @@ async def audit_franchise_call(
             raise HTTPException(500, td["error"])
         scores = score_call_checklist(td, BURGER_SINGH_CRITERIA)
         report = generate_report_checklist(str(file_path), td, scores, BURGER_SINGH_CRITERIA)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"Audit failed: {str(e)}")
 
@@ -814,8 +849,9 @@ async def checklist_list():
 async def checklist_reports_list(request: Request, session: str = Cookie(default=None)):
     token = request.headers.get("X-Session-Token") or request.query_params.get("token") or session
     user = verify_session_token(token) if token else None
+    print(f"DEBUG /checklist-reports-list called | token={str(token)[:20] if token else None} | user={user.get('email') if user else None}")
     reports = []
-    for rf in sorted(Path("reports").glob("*.checklist.json"), reverse=True):
+    for rf in sorted(Path("reports").glob("*.checklist.json"), key=lambda x: x.stat().st_mtime, reverse=True):
         try:
             with open(rf) as f:
                 d = json.load(f)
@@ -832,9 +868,7 @@ async def checklist_report():
 
 from fastapi.responses import FileResponse
 
-@app.get("/reports/{filename}")
-async def serve_report(filename: str):
-    return FileResponse(f"reports/{filename}")
+
 
 # ── Google OAuth ────────────────────────────────────────────────────────────────
 
@@ -1104,6 +1138,7 @@ async def list_reports(request: Request, session: str = Cookie(default=None)):
     token = request.headers.get("X-Session-Token") or session
     user = verify_session_token(token) if token else None
     user_email = user["email"] if user else None
+    print(f"DEBUG /reports called | token={str(token)[:20] if token else None} | user={user_email}")
     reports = []
 
     for rf in sorted(REPORTS_DIR.glob("*.json"), reverse=True):
@@ -1137,13 +1172,16 @@ async def list_reports(request: Request, session: str = Cookie(default=None)):
 
 
 @app.get("/reports/{audit_id}")
-async def get_report(audit_id: str, request: Request,  session: str = Cookie(default=None)):
+async def get_report(audit_id: str, request: Request, session: str = Cookie(default=None)):
+    # Try standard report first
     report_path = REPORTS_DIR / f"{audit_id}.json"
+    if not report_path.exists():
+        # Try checklist report
+        report_path = REPORTS_DIR / f"{audit_id}.checklist.json"
     if not report_path.exists():
         raise HTTPException(404, "Report not found")
     with open(report_path) as f:
         data = json.load(f)
-    # Optional: enforce ownership
     token = request.headers.get("X-Session-Token") or session
     user = verify_session_token(token) if token else None
     if user and data.get("user_email") not in (user["email"], "anonymous"):
@@ -1335,3 +1373,42 @@ async def get_report_detail(audit_id: str, admin_session: str = Cookie(default=N
             continue
     raise HTTPException(status_code=404, detail="Report not found")
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── Franchise Login ─────────────────────────────────────────────────────────────
+
+def verify_franchise_session(franchise_session: str):
+    if not franchise_session:
+        return None
+    try:
+        conn = _sqlite3.connect("leads.db")
+        row = conn.execute(
+            "SELECT email FROM sessions WHERE token=? AND expires_at > datetime('now')",
+            [franchise_session]
+        ).fetchone()
+        conn.close()
+        if row and row[0] in FRANCHISE_CLIENTS:
+            return row[0]
+    except Exception:
+        pass
+    return None
+
+@app.get("/franchise/login", response_class=HTMLResponse)
+async def franchise_login_page():
+    return open("franchise_login.html").read()
+
+@app.post("/franchise/login")
+@limiter.limit("5/minute")
+async def franchise_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    expected = FRANCHISE_USERS.get(email)
+    if not expected or password != expected:
+        raise HTTPException(401, "Invalid credentials")
+    session_token = create_session_token(email)
+    response = JSONResponse({"success": True, "token": session_token})
+    response.set_cookie(key="franchise_session", value=session_token, max_age=86400, httponly=True, samesite="lax")
+    return response
+
+@app.get("/franchise/logout")
+async def franchise_logout():
+    response = RedirectResponse(url="/franchise/login")
+    response.delete_cookie("franchise_session")
+    return response

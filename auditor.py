@@ -27,7 +27,7 @@ BURGER_SINGH_CRITERIA = [
 
     # Group 2 — Ask Right Questions (20 pts)
     {"key": "location_pincode", "label": "Location & Pincode collected?", "points": 2, "group": "Ask Right Questions", "negative": False},
-    {"key": "prospect_name", "label": "Prospect name collected?", "hint": "check if prospect name was mentioned/used anywhere in call — agent may already have it in CRM so check if agent used the name while speaking, or prospect mentioned it, or agent confirmed it. Mark true if name appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
+    {"key": "prospect_name", "label": "Prospect name collected?", "hint": "check if prospect name was collected or used in the call. Mark true if: (1) agent asked for the name, OR (2) agent confirmed the name (e.g. am I speaking with Rahul?), OR (3) agent addressed the prospect by name during conversation (shows they have it). Mark false only if prospect name was never mentioned or used at all. Find the FIRST timestamp where name was used or confirmed.", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_phone", "label": "Prospect phone number collected?", "hint": "check if phone number was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect confirmed it, or it was mentioned anywhere. Mark true if phone number appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_age", "label": "Prospect age collected?", "hint": "check if prospect age was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if age appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_email", "label": "Prospect email collected?", "hint": "check if email was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if email appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
@@ -340,7 +340,7 @@ IMPORTANT RULES:
 - For NEGATIVE parameters: return true if agent did NOT say the wrong thing, false if agent DID make that false commitment.
 - For POSITIVE parameters: return true if agent covered it, false if missed.
 - Always check speaker labels before making a judgement.
-- For timestamp: find where in the transcript the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null.
+- For timestamp: find the FIRST occurrence in the transcript where the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null. Always pick the earliest timestamp where this was first done.
 - Timestamps must come directly from the transcript timestamps shown as [Xs] at the start of each line.
 
 PARAMETERS TO EVALUATE:
