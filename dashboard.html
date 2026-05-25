@@ -376,10 +376,16 @@ function showModal(report) {
   document.getElementById('modalTitle').textContent = 'Audit: ' + (report.file || report.audit_id || '');
   var html = '<p style="color:#888;margin-bottom:16px">' + (report.call_summary || '') + '</p>';
   html += '<div class="scores-grid">';
+  var labelMap = {
+    greeting: 'Greeting', empathy: 'Empathy', resolution: 'Resolution',
+    communication: 'Communication', compliance: 'Compliance', closing: 'Closing',
+    voice_modulation: 'Voice Modulation', energy_enthusiasm: 'Energy & Enthusiasm'
+  };
   for (var key in scores) {
     var v = scores[key];
     var color = v >= 8 ? '#2e7d32' : v >= 6 ? '#f57f17' : '#c62828';
-    html += '<div class="score-item"><div class="val" style="color:' + color + '">' + v + '/10</div><div class="name">' + key.charAt(0).toUpperCase() + key.slice(1) + '</div></div>';
+    var label = labelMap[key] || key.charAt(0).toUpperCase() + key.slice(1);
+    html += '<div class="score-item"><div class="val" style="color:' + color + '">' + v + '/10</div><div class="name">' + label + '</div></div>';
   }
   html += '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">';
@@ -389,6 +395,26 @@ function showModal(report) {
   var compText = report.compliance_passed ? 'Passed' : 'Failed';
   html += '<div style="background:#f8f9fa;border-radius:8px;padding:12px;text-align:center"><div style="font-weight:600;color:' + compColor + '">' + compText + '</div><div style="font-size:12px;color:#888">Compliance</div></div>';
   html += '</div>';
+  // Voice Analysis Panel
+  var va = report.voice_analysis;
+  if (va && va.analysis_status === 'ok') {
+    html += '<div class="sec">🎙️ Voice Analysis</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">';
+    html += '<div style="background:#f0f7ff;border-radius:8px;padding:12px;text-align:center;border-left:3px solid #1565c0">';
+    html += '<div style="font-size:18px;font-weight:700;color:#1565c0">' + va.modulation_label + '</div>';
+    html += '<div style="font-size:11px;color:#888;margin-top:4px">Voice Modulation</div>';
+    html += '<div style="font-size:11px;color:#aaa">±' + va.pitch_variation_hz + ' Hz</div></div>';
+    html += '<div style="background:#f0fff4;border-radius:8px;padding:12px;text-align:center;border-left:3px solid #2e7d32">';
+    html += '<div style="font-size:18px;font-weight:700;color:#2e7d32">' + va.energy_label + '</div>';
+    html += '<div style="font-size:11px;color:#888;margin-top:4px">Energy Level</div>';
+    html += '<div style="font-size:11px;color:#aaa">Score: ' + va.energy_score + '/10</div></div>';
+    html += '<div style="background:#fff8f0;border-radius:8px;padding:12px;text-align:center;border-left:3px solid #f57f17">';
+    html += '<div style="font-size:18px;font-weight:700;color:#f57f17">' + va.silence_ratio_pct + '%</div>';
+    html += '<div style="font-size:11px;color:#888;margin-top:4px">Silence / Pause</div>';
+    html += '<div style="font-size:11px;color:#aaa">' + va.speaking_rate + '</div></div>';
+    html += '</div>';
+  }
+
   if (report.flags && report.flags.length) {
     html += '<div class="sec">Flags</div>';
     for (var i = 0; i < report.flags.length; i++) html += '<div class="flag-item">' + report.flags[i] + '</div>';
