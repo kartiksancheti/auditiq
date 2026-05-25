@@ -507,7 +507,7 @@ function renderMain(app) {
           <div style="font-size:32px">🎵</div>
           <strong id="fileLabel">Click to select audio file</strong>
           <p>Supports MP3, WAV, M4A, OGG</p>
-          <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg" style="display:none" onchange="updateLabel('fileLabel', this)">
+          <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg,.MP3,.WAV,.M4A,.OGG,audio/*" style="display:none" onchange="updateLabel('fileLabel', this)">
         </div>
       </div>
       <button class="btn" onclick="submitAudit()" id="auditBtn">🔍 Audit Call</button>
@@ -524,7 +524,7 @@ function renderMain(app) {
           <div style="font-size:32px">📂</div>
           <strong id="batchLabel">Click to select multiple audio files</strong>
           <p>Hold Ctrl/Cmd to select multiple</p>
-          <input type="file" id="batchFiles" accept=".mp3,.wav,.m4a,.ogg" multiple style="display:none" onchange="updateLabel('batchLabel', this, true)">
+          <input type="file" id="batchFiles" accept=".mp3,.wav,.m4a,.ogg,.MP3,.WAV,.M4A,.OGG,audio/*" multiple style="display:none" onchange="updateLabel('batchLabel', this, true)">
         </div>
       </div>
       <button class="btn" onclick="submitBatch()" id="batchBtn">📦 Audit All</button>
@@ -831,13 +831,22 @@ async def audit_franchise_call(
         json.dump(report, f, indent=2, ensure_ascii=False)
 
     # Move to franchise recordings folder instead of deleting
+    recorded_path = None
     try:
         import shutil
         recordings_dir = Path("franchise_recordings")
         recordings_dir.mkdir(exist_ok=True)
-        shutil.move(str(file_path), str(recordings_dir / file_path.name))
+        recorded_path = str(recordings_dir / file_path.name)
+        shutil.move(str(file_path), recorded_path)
     except:
         pass
+
+    # Send to Telegram
+    try:
+        if recorded_path:
+            asyncio.create_task(send_to_telegram_and_delete(recorded_path, file_id, report, user["email"]))
+    except Exception as e:
+        print(f"Telegram franchise error: {e}")
 
     return report
 
@@ -1049,7 +1058,7 @@ async def audit_single_call(
     file_size_mb = len(file_content) / (1024 * 1024)
 
     # Cap trial users to 1 min audio (~1.5MB)
-    if user.get("plan", "trial") == "trial" and file_size_mb > 1.5:
+    if user.get("plan", "trial") == "trial" and file_size_mb > 200:
         raise HTTPException(400, f"Free trial is limited to 1-minute audio files ({file_size_mb:.1f}MB uploaded). Upgrade to audit longer calls.")
 
     file_id = str(uuid.uuid4())[:8]

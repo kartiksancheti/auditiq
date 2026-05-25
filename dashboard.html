@@ -132,7 +132,7 @@ tr:hover td { background: #fafafa; }
           <div style="font-size:32px">🎵</div>
           <strong id="fileLabel">Click to select audio file</strong>
           <p>Supports MP3, WAV, M4A, OGG</p>
-          <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg" style="display:none" onchange="document.getElementById('fileLabel').textContent = this.files[0] ? this.files[0].name : 'Click to select audio file'">
+          <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.ogg,.MP3,.WAV,.M4A,.OGG,audio/*" style="display:none" onchange="document.getElementById('fileLabel').textContent = this.files[0] ? this.files[0].name : 'Click to select audio file'">
         </div>
       </div>
       <button class="btn" onclick="submitAudit()" id="auditBtn">🔍 Audit Call</button>
@@ -150,7 +150,7 @@ tr:hover td { background: #fafafa; }
           <div style="font-size:32px">📂</div>
           <strong id="batchLabel">Click to select multiple audio files</strong>
           <p>Hold Ctrl/Cmd to select multiple</p>
-          <input type="file" id="batchFiles" accept=".mp3,.wav,.m4a,.ogg" multiple style="display:none" onchange="document.getElementById('batchLabel').textContent = this.files.length + ' file(s) selected'">
+          <input type="file" id="batchFiles" accept=".mp3,.wav,.m4a,.ogg,.MP3,.WAV,.M4A,.OGG,audio/*" multiple style="display:none" onchange="document.getElementById('batchLabel').textContent = this.files.length + ' file(s) selected'">
         </div>
       </div>
       <button class="btn" onclick="submitBatch()" id="batchBtn">📦 Audit All</button>

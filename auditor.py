@@ -1,4 +1,5 @@
-import os, json, httpx, asyncio
+import os, json, asyncio
+import numpy as np
 from pathlib import Path
 from datetime import datetime
 from groq import Groq
@@ -6,7 +7,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -27,7 +27,7 @@ BURGER_SINGH_CRITERIA = [
 
     # Group 2 — Ask Right Questions (20 pts)
     {"key": "location_pincode", "label": "Location & Pincode collected?", "points": 2, "group": "Ask Right Questions", "negative": False},
-    {"key": "prospect_name", "label": "Prospect name collected?", "hint": "check if prospect name was collected or used in the call. Mark true if: (1) agent asked for the name, OR (2) agent confirmed the name (e.g. am I speaking with Rahul?), OR (3) agent addressed the prospect by name during conversation (shows they have it). Mark false only if prospect name was never mentioned or used at all. Find the FIRST timestamp where name was used or confirmed.", "points": 0.5, "group": "Ask Right Questions", "negative": False},
+    {"key": "prospect_name", "label": "Prospect name collected?", "hint": "check if prospect name was mentioned/used anywhere in call — agent may already have it in CRM so check if agent used the name while speaking, or prospect mentioned it, or agent confirmed it. Mark true if name appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_phone", "label": "Prospect phone number collected?", "hint": "check if phone number was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect confirmed it, or it was mentioned anywhere. Mark true if phone number appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_age", "label": "Prospect age collected?", "hint": "check if prospect age was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if age appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_email", "label": "Prospect email collected?", "hint": "check if email was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if email appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
@@ -54,6 +54,166 @@ BURGER_SINGH_CRITERIA = [
 ]
 
 
+# ─────────────────────────────────────────────
+# VOICE ANALYSIS (default auditor only)
+# ─────────────────────────────────────────────
+
+def analyze_voice_acoustics(file_path, agent_segments=None):
+    """Extract voice modulation and energy metrics from audio. Default auditor only."""
+    try:
+        import librosa
+        print("[voice] Loading audio for acoustic analysis...")
+        # Use soundfile directly for reliable WAV/MP3 loading
+        import soundfile as _sf
+        import subprocess, tempfile, os as _os
+        # Convert to wav using ffmpeg first for reliability
+        tmp_wav = file_path + "_tmp_analysis.wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", file_path, "-ar", "16000", "-ac", "1", tmp_wav],
+            capture_output=True
+        )
+        if _os.path.exists(tmp_wav):
+            y, sr = librosa.load(tmp_wav, sr=16000, mono=True)
+            _os.remove(tmp_wav)
+        else:
+            y, sr = librosa.load(file_path, sr=16000, mono=True)
+
+        # If agent segments provided, extract only agent audio
+        if agent_segments:
+            agent_chunks = []
+            for (start, end) in agent_segments:
+                s = int(start * sr)
+                e = int(min(end * sr, len(y)))
+                if e > s:
+                    agent_chunks.append(y[s:e])
+            if agent_chunks:
+                y = np.concatenate(agent_chunks)
+
+        if len(y) < sr:  # less than 1 second
+            return _empty_acoustics()
+
+        # --- PITCH (Voice Modulation) ---
+        pitches, magnitudes = librosa.piptrack(y=y, sr=sr, fmin=80, fmax=400)
+        pitch_values = []
+        for t in range(pitches.shape[1]):
+            idx = magnitudes[:, t].argmax()
+            p = pitches[idx, t]
+            if 80 < p < 400:
+                pitch_values.append(p)
+
+        pitch_std = float(np.std(pitch_values)) if len(pitch_values) > 10 else 0.0
+        pitch_mean = float(np.mean(pitch_values)) if len(pitch_values) > 10 else 0.0
+
+        # Modulation score 0-10
+        modulation_score = round(min(10.0, pitch_std / 8.0), 1)
+
+        if pitch_std > 45:
+            modulation_label = "Excellent"
+        elif pitch_std > 28:
+            modulation_label = "Good"
+        elif pitch_std > 15:
+            modulation_label = "Moderate"
+        else:
+            modulation_label = "Monotone"
+
+        # --- ENERGY / ENTHUSIASM ---
+        rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
+        energy_mean = float(np.mean(rms))
+        energy_max  = float(np.max(rms))
+
+        # Energy score 0-10
+        energy_score = round(min(10.0, energy_mean * 180.0), 1)
+
+        if energy_mean > 0.07:
+            energy_label = "High Energy"
+        elif energy_mean > 0.045:
+            energy_label = "Good Energy"
+        elif energy_mean > 0.02:
+            energy_label = "Low Energy"
+        else:
+            energy_label = "Very Low / Tired"
+
+        # --- SILENCE RATIO ---
+        silence_threshold = 0.015
+        silent_frames = int(np.sum(rms < silence_threshold))
+        silence_ratio = round(silent_frames / max(len(rms), 1) * 100, 1)
+
+        # --- SPEAKING RATE (words per min estimate) ---
+        # Using zero crossing rate as proxy for speech activity
+        zcr = librosa.feature.zero_crossing_rate(y)[0]
+        speech_frames = int(np.sum(zcr > 0.05))
+        speech_seconds = speech_frames * 512 / sr
+        speaking_rate_label = "Normal"
+        if speech_seconds > 0:
+            # rough estimate
+            if silence_ratio > 40:
+                speaking_rate_label = "Slow / Many Pauses"
+            elif silence_ratio < 10:
+                speaking_rate_label = "Fast / Few Pauses"
+            else:
+                speaking_rate_label = "Normal"
+
+        print(f"[voice] Modulation: {modulation_label} ({pitch_std:.1f} Hz std) | Energy: {energy_label} ({energy_mean:.4f})")
+
+        return {
+            "voice_modulation_score": modulation_score,
+            "energy_score": energy_score,
+            "pitch_mean_hz": round(pitch_mean, 1),
+            "pitch_variation_hz": round(pitch_std, 1),
+            "energy_mean": round(energy_mean, 4),
+            "silence_ratio_pct": silence_ratio,
+            "modulation_label": modulation_label,
+            "energy_label": energy_label,
+            "speaking_rate": speaking_rate_label,
+            "analysis_status": "ok",
+        }
+
+    except Exception as e:
+        print(f"[voice] Analysis failed: {e}")
+        return _empty_acoustics(error=str(e))
+
+
+def _empty_acoustics(error=None):
+    return {
+        "voice_modulation_score": None,
+        "energy_score": None,
+        "pitch_mean_hz": None,
+        "pitch_variation_hz": None,
+        "energy_mean": None,
+        "silence_ratio_pct": None,
+        "modulation_label": "N/A",
+        "energy_label": "N/A",
+        "speaking_rate": "N/A",
+        "analysis_status": error or "skipped",
+    }
+
+
+def extract_agent_segments(td, agent_speaker):
+    """Get list of (start, end) tuples for agent utterances from transcript."""
+    import re
+    segments = []
+    lines = td.get("transcript", "").split("\n")
+    for i, line in enumerate(lines):
+        if agent_speaker not in line:
+            continue
+        match = re.match(r'\[(\d+\.?\d*)s\]', line)
+        if not match:
+            continue
+        start = float(match.group(1))
+        # Try to get end from next line's timestamp
+        end = start + 8.0  # default 8s window
+        if i + 1 < len(lines):
+            next_match = re.match(r'\[(\d+\.?\d*)s\]', lines[i + 1])
+            if next_match:
+                end = float(next_match.group(1))
+        segments.append((start, end))
+    return segments
+
+
+# ─────────────────────────────────────────────
+# TRANSCRIPTION (Sarvam)
+# ─────────────────────────────────────────────
+
 async def transcribe_audio(file_path):
     print(f"[1/3] Transcribing: {file_path}")
     import asyncio
@@ -64,7 +224,7 @@ async def transcribe_audio(file_path):
 
     def run_transcription():
         import time
-        # Step 1: Create job
+        import requests
         job = client.speech_to_text_job.create_job(
             model="saaras:v3",
             mode="transcribe",
@@ -75,11 +235,9 @@ async def transcribe_audio(file_path):
         job_id = job.job_id
         print(f"Sarvam job created: {job_id}")
 
-        # Step 2: Get upload links and upload
         upload_links = client.speech_to_text_job.get_upload_links(
             job_id=job_id, files=[os.path.basename(file_path)]
         )
-        import requests
         filename = os.path.basename(file_path)
         print(f"Upload URLs keys: {list(upload_links.upload_urls.keys())}")
         key = filename if filename in upload_links.upload_urls else list(upload_links.upload_urls.keys())[0]
@@ -91,11 +249,9 @@ async def transcribe_audio(file_path):
             resp.raise_for_status()
         print(f"File uploaded successfully")
 
-        # Step 3: Start job
         client.speech_to_text_job.start(job_id=job_id)
         print(f"Job started, polling...")
 
-        # Step 4: Poll for completion
         for attempt in range(60):
             time.sleep(5)
             status = client.speech_to_text_job.get_status(job_id=job_id)
@@ -108,9 +264,7 @@ async def transcribe_audio(file_path):
                         for out in task.outputs:
                             output_files.append(out.file_name)
                 print(f"Output files: {output_files}")
-
                 links = client.speech_to_text_job.get_download_links(job_id=job_id, files=output_files)
-
                 import requests as req
                 dl_urls = links.download_urls if hasattr(links, "download_urls") else links.download_links
                 first_key = list(dl_urls.keys())[0] if isinstance(dl_urls, dict) else 0
@@ -185,11 +339,26 @@ def parse_transcript(dg):
 
 
 # ─────────────────────────────────────────────
-# DEFAULT SCORING (existing clients - untouched)
+# DEFAULT SCORING (existing clients)
 # ─────────────────────────────────────────────
 
-def score_call(td, criteria=DEFAULT_CRITERIA, client_context=""):
+def score_call(td, criteria=DEFAULT_CRITERIA, client_context="", acoustics=None):
     print("[2/3] Scoring call with AI...")
+
+    acoustic_block = ""
+    if acoustics and acoustics.get("analysis_status") == "ok":
+        acoustic_block = f"""
+VOICE & ENERGY ANALYSIS (Agent):
+- Voice Modulation: {acoustics['modulation_label']} (pitch variation: {acoustics['pitch_variation_hz']} Hz)
+- Energy / Enthusiasm: {acoustics['energy_label']}
+- Silence / Pause Ratio: {acoustics['silence_ratio_pct']}%
+- Speaking Rate: {acoustics['speaking_rate']}
+
+Use these acoustic metrics to score two additional parameters:
+- "voice_modulation": <1-10> (10=very expressive varied tone, 1=completely flat/monotone)
+- "energy_enthusiasm": <1-10> (10=highly energetic & engaged, 1=lethargic/disengaged/tired)
+"""
+
     prompt = f"""You are an expert Call Center QA Analyst. Analyze this call transcript and provide a detailed quality assessment.
 
 NOTE: Speakers are labeled SPEAKER_A and SPEAKER_B. Determine which one is the company agent (representative/recruiter/support staff) and which one is the customer/candidate based on the context of the conversation. The agent is typically the one who initiated the call or is representing a company/service.
@@ -205,6 +374,7 @@ QA CRITERIA:
 {criteria}
 
 {f"CLIENT CONTEXT: {client_context}" if client_context else ""}
+{acoustic_block}
 
 IMPORTANT: When generating flags, only flag issues with the AGENT's behaviour. Never flag customer statements as agent issues. Always check the speaker label at each timestamp before raising a flag.
 
@@ -218,7 +388,9 @@ Respond ONLY with valid JSON in this exact format:
     "resolution": <1-10>,
     "communication": <1-10>,
     "compliance": <1-10>,
-    "closing": <1-10>
+    "closing": <1-10>,
+    "voice_modulation": <1-10>,
+    "energy_enthusiasm": <1-10>
   }},
   "customer_sentiment": {{
     "start": "<angry|frustrated|neutral|satisfied|happy>",
@@ -228,16 +400,17 @@ Respond ONLY with valid JSON in this exact format:
   "flags": ["<specific issue found, with timestamp if possible>"],
   "strengths": ["<what agent did well>"],
   "improvement_areas": ["<specific coaching suggestion>"],
-  "call_summary": "<2-3 sentence summary of the call. Do NOT use SPEAKER_A or SPEAKER_B — use Agent and Prospect instead>",
+  "call_summary": "<2-3 sentence summary of the call. Do NOT use SPEAKER_A or SPEAKER_B — use Agent and Customer instead>",
   "resolution_status": "<resolved|unresolved|escalated|follow_up_needed>",
   "recommendation": "<excellent|good|coaching_needed|critical_review>",
   "compliance_passed": <true|false>
 }}"""
+
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=1000,
+        max_tokens=1200,
     )
     raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):
@@ -247,7 +420,7 @@ Respond ONLY with valid JSON in this exact format:
     return json.loads(raw)
 
 
-def generate_report(file_path, td, scores):
+def generate_report(file_path, td, scores, acoustics=None):
     print("[3/3] Generating report...")
     agent_spk = scores.get("agent_speaker", "SPEAKER_A")
     fixed_lines = []
@@ -257,7 +430,8 @@ def generate_report(file_path, td, scores):
             line = line.replace(spk, label)
         fixed_lines.append(line)
     td["transcript"] = "\n".join(fixed_lines)
-    return {
+
+    report = {
         "audit_id": f"AUDIT_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         "file": Path(file_path).name,
         "audited_at": datetime.now().isoformat(),
@@ -281,6 +455,11 @@ def generate_report(file_path, td, scores):
         "full_transcript": td.get("transcript"),
     }
 
+    if acoustics:
+        report["voice_analysis"] = acoustics
+
+    return report
+
 
 async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", save_report=True):
     print(f"\n{'='*50}\nAuditing: {file_path}\n{'='*50}")
@@ -288,8 +467,15 @@ async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", sa
     td = parse_transcript(dg)
     if "error" in td:
         return {"error": td["error"], "file": file_path}
-    scores = score_call(td, criteria, client_context)
-    report = generate_report(file_path, td, scores)
+
+    # Voice analysis — default auditor only, never franchise
+    agent_spk_guess = "SPEAKER_A"  # will be corrected after scoring
+    agent_segments = extract_agent_segments(td, agent_spk_guess)
+    acoustics = analyze_voice_acoustics(file_path, agent_segments)
+
+    scores = score_call(td, criteria, client_context, acoustics=acoustics)
+    report = generate_report(file_path, td, scores, acoustics=acoustics)
+
     if save_report:
         rp = Path(file_path).with_suffix(".audit.json")
         with open(rp, "w", encoding="utf-8") as f:
@@ -319,7 +505,7 @@ async def audit_batch(folder_path, criteria=DEFAULT_CRITERIA):
 
 
 # ─────────────────────────────────────────────
-# CHECKLIST SCORING (Burger Singh demo)
+# CHECKLIST SCORING (Franchise — UNTOUCHED)
 # ─────────────────────────────────────────────
 
 def score_call_checklist(td, criteria_list):
@@ -340,7 +526,7 @@ IMPORTANT RULES:
 - For NEGATIVE parameters: return true if agent did NOT say the wrong thing, false if agent DID make that false commitment.
 - For POSITIVE parameters: return true if agent covered it, false if missed.
 - Always check speaker labels before making a judgement.
-- For timestamp: find the FIRST occurrence in the transcript where the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null. Always pick the earliest timestamp where this was first done.
+- For timestamp: find where in the transcript the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null.
 - Timestamps must come directly from the transcript timestamps shown as [Xs] at the start of each line.
 
 PARAMETERS TO EVALUATE:
@@ -384,13 +570,11 @@ def generate_report_checklist(file_path, td, scores, criteria_list):
     td["transcript"] = "\n".join(fixed_lines)
 
     checks = scores.get("checks", {})
-
     checklist_result = []
     total_score = 0
     max_score = 0
     for c in criteria_list:
         check_data = checks.get(c["key"], {})
-        # Handle both old format (bool) and new format (dict)
         if isinstance(check_data, dict):
             passed = check_data.get("passed", False)
             timestamp = check_data.get("timestamp", None)
@@ -486,6 +670,10 @@ if __name__ == "__main__":
         print(f"Resolution:     {report.get('resolution_status')}")
         print(f"Compliance:     {'✅ Passed' if report.get('compliance_passed') else '❌ Failed'}")
         print(f"Summary:        {report.get('call_summary')}")
+        va = report.get("voice_analysis", {})
+        if va.get("analysis_status") == "ok":
+            print(f"Voice Modulation: {va.get('modulation_label')} ({va.get('voice_modulation_score')}/10)")
+            print(f"Energy:           {va.get('energy_label')} ({va.get('energy_score')}/10)")
         if report.get("flags"):
             print(f"\n⚠️  Flags:")
             for flag in report["flags"]:
