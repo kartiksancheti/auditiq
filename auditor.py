@@ -237,6 +237,7 @@ async def _transcribe_assemblyai(file_path):
             speaker_labels=True,
             language_detection=True,
             speech_models=["universal-2"],
+            speakers_expected=2,
         )
         transcriber = aai.Transcriber(config=config)
         transcript = transcriber.transcribe(file_path)
@@ -452,6 +453,7 @@ QA CRITERIA:
 {acoustic_block}
 
 IMPORTANT: When generating flags, only flag issues with the AGENT's behaviour. Never flag customer statements as agent issues. Always check the speaker label at each timestamp before raising a flag.
+IMPORTANT: Speaker labels may occasionally be wrong due to diarization errors. Judge based on the CONTENT and CONTEXT of what was said, not just the speaker label. If a line sounds like it was said by the agent but is labelled as Customer, score it as agent's line.
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -601,6 +603,7 @@ IMPORTANT RULES:
 - For NEGATIVE parameters: return true if agent did NOT say the wrong thing, false if agent DID make that false commitment.
 - For POSITIVE parameters: return true if agent covered it, false if missed.
 - Always check speaker labels before making a judgement.
+- Speaker labels may occasionally be wrong due to diarization errors. Judge based on the CONTENT and CONTEXT of what was said, not just the speaker label. If a line sounds like it was said by the agent but is labelled as Customer, score it as agent's line.
 - For timestamp: find where in the transcript the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null.
 - Timestamps must come directly from the transcript timestamps shown as [Xs] at the start of each line.
 
