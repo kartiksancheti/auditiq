@@ -1068,7 +1068,7 @@ async def audit_single_call(
 
     context = " ".join(filter(None, [f"Client: {client_name}" if client_name else "", f"Agent: {agent_name}" if agent_name else ""])).strip()
     try:
-        report = await audit_call(str(file_path), criteria, context, save_report=False)
+        report = await audit_call(str(file_path), criteria, context, save_report=False, user_email=user["email"])
     except Exception as e:
         raise HTTPException(500, f"Audit failed: {str(e)}")
 
