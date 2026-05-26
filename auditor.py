@@ -211,14 +211,11 @@ def extract_agent_segments(td, agent_speaker):
 
 
 # ─────────────────────────────────────────────
-# TRANSCRIPTION ROUTING
+# TRANSCRIPTION (Sarvam)
 # ─────────────────────────────────────────────
 
-
-async def transcribe_audio(file_path, user_email=None):
-    DIARIZATION_USERS = {"salim@delightservices.in"}
-    use_diarization = bool(user_email and user_email.lower() in DIARIZATION_USERS)
-    print(f"[1/3] Transcribing: {file_path} | diarization={use_diarization}")
+async def transcribe_audio(file_path):
+    print(f"[1/3] Transcribing: {file_path}")
     import asyncio
     from sarvamai import SarvamAI
 
@@ -232,8 +229,8 @@ async def transcribe_audio(file_path, user_email=None):
             model="saaras:v3",
             mode="transcribe",
             language_code="unknown",
-            with_diarization=use_diarization,
-            num_speakers=2 if use_diarization else None,
+            with_diarization=True,
+            num_speakers=2,
         )
         job_id = job.job_id
         print(f"Sarvam job created: {job_id}")
@@ -464,9 +461,9 @@ def generate_report(file_path, td, scores, acoustics=None):
     return report
 
 
-async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", save_report=True, user_email=None):
+async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", save_report=True):
     print(f"\n{'='*50}\nAuditing: {file_path}\n{'='*50}")
-    dg = await transcribe_audio(file_path, user_email=user_email)
+    dg = await transcribe_audio(file_path)
     td = parse_transcript(dg)
     if "error" in td:
         return {"error": td["error"], "file": file_path}
