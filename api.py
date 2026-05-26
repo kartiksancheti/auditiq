@@ -836,10 +836,17 @@ async def audit_franchise_call(
         raise HTTPException(500, f"Audit failed: {str(e)}")
 
     updated = increment_call_count(user["email"])
+    # Create human-readable display name
+    from datetime import datetime as _dt
+    date_str = _dt.now().strftime("%d%b%Y")
+    display_name = f"{agent_name.strip()}_{date_str}_{file_id}"
+
     report.update({
         "agent_name": agent_name.strip(),
         "user_email": user["email"],
         "file": safe_filename,
+        "display_name": display_name,
+        "file_id": file_id,
         "calls_used": updated["calls_used"],
         "calls_limit": updated["calls_limit"],
     })

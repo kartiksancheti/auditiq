@@ -673,6 +673,27 @@ Respond ONLY with JSON:
     return result
 
 
+def verify_timestamp(timestamp, transcript):
+    """Verify LLaMA timestamp exists in transcript, return nearest valid one."""
+    if not timestamp:
+        return None
+    import re
+    # Extract start time from timestamp like "45.0s - 55.0s"
+    match = re.search(r"(\d+\.?\d*)s", str(timestamp))
+    if not match:
+        return None
+    ts = float(match.group(1))
+    # Find nearest actual timestamp in transcript
+    all_ts = [float(m) for m in re.findall(r"\[(\d+\.?\d*)s\]", transcript)]
+    if not all_ts:
+        return timestamp
+    nearest = min(all_ts, key=lambda x: abs(x - ts))
+    # If LLaMA timestamp is within 15 seconds of actual, keep it
+    if abs(nearest - ts) <= 15:
+        return timestamp
+    return None  # timestamp too far off, discard
+
+
 def generate_report_checklist(file_path, td, scores, criteria_list):
     print("[3/3] Generating checklist report...")
     agent_spk = scores.get("agent_speaker", "SPEAKER_A")
@@ -700,11 +721,13 @@ def generate_report_checklist(file_path, td, scores, criteria_list):
         max_score += pts
         earned = pts if passed else 0
         total_score += earned
+        # Verify timestamp is real
+        verified_ts = verify_timestamp(timestamp, td.get("transcript", ""))
         checklist_result.append({
             "label": c["label"],
             "key": c["key"],
             "passed": passed,
-            "timestamp": timestamp,
+            "timestamp": verified_ts,
             "points_earned": earned,
             "points_max": pts,
             "group": c["group"],
