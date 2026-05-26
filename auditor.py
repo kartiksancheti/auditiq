@@ -214,7 +214,84 @@ def extract_agent_segments(td, agent_speaker):
 # TRANSCRIPTION (Sarvam)
 # ─────────────────────────────────────────────
 
-async def transcribe_audio(file_path):
+# Users that stay on Sarvam
+SARVAM_USERS = {
+    "salim@delightservices.in",
+}
+
+async def transcribe_audio(file_path, user_email=None):
+    if user_email and user_email.lower() in SARVAM_USERS:
+        print(f"[1/3] Using Sarvam for {user_email}")
+        return await _transcribe_sarvam(file_path)
+    else:
+        print(f"[1/3] Using AssemblyAI for {user_email or 'unknown'}")
+        return await _transcribe_assemblyai(file_path)
+
+
+async def _transcribe_assemblyai(file_path):
+    import asyncio
+    import assemblyai as aai
+    aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+
+    def run():
+        print(f"[assemblyai] Transcribing: {file_path}")
+        config = aai.TranscriptionConfig(
+            speaker_labels=True,
+            language_detection=True,
+            speech_models=["universal-2"],
+        )
+        transcriber = aai.Transcriber(config=config)
+        transcript = transcriber.transcribe(file_path)
+        if transcript.status == aai.TranscriptStatus.error:
+            raise Exception(f"AssemblyAI error: {transcript.error}")
+        print(f"[assemblyai] Done. Language: {transcript.json_response.get('language_code')}. Utterances: {len(transcript.utterances)}")
+
+        # Convert Devanagari to Hinglish Roman via LLaMA
+        import re
+        def needs_conversion(text):
+            return bool(re.search(r"[ऀ-ॿ]", text))
+
+        def convert_to_hinglish(utterances_text):
+            if not any(needs_conversion(t) for t in utterances_text):
+                return utterances_text
+            from groq import Groq as GroqClient
+            groq_client = GroqClient(api_key=os.getenv("GROQ_API_KEY"))
+            all_text = "\n".join(utterances_text)
+            response = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{
+                    "role": "user",
+                    "content": "Convert this Hindi/Devanagari text to natural Hinglish Roman script.\nRules:\n- Write Hindi words exactly as spoken in Roman letters\n- Keep English words as-is\n- Natural conversational style like WhatsApp Hinglish\n- Example: मेरा नाम गौरव है → Mera naam Gaurav hai\n- One line in = one line out, same order\n- Return ONLY converted lines, nothing else\n\nText:\n" + all_text
+                }],
+                temperature=0.1,
+                max_tokens=3000,
+            )
+            converted = response.choices[0].message.content.strip().split("\n")
+            converted = [l.strip() for l in converted if l.strip()]
+            # Pad if LLaMA returned fewer lines
+            while len(converted) < len(utterances_text):
+                converted.append(utterances_text[len(converted)])
+            return converted
+
+        raw_texts = [u.text for u in transcript.utterances]
+        hinglish_texts = convert_to_hinglish(raw_texts)
+        print(f"[assemblyai] Hinglish conversion done")
+
+        utterances = []
+        for i, u in enumerate(transcript.utterances):
+            utterances.append({
+                "speaker_id": "0" if u.speaker == "A" else "1",
+                "transcript": hinglish_texts[i] if i < len(hinglish_texts) else u.text,
+                "start_time_seconds": round(u.start / 1000, 1),
+                "end_time_seconds": round(u.end / 1000, 1),
+            })
+        return {"diarized_transcript": {"entries": utterances}}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run)
+
+
+async def _transcribe_sarvam(file_path):
     print(f"[1/3] Transcribing: {file_path}")
     import asyncio
     from sarvamai import SarvamAI
@@ -461,9 +538,9 @@ def generate_report(file_path, td, scores, acoustics=None):
     return report
 
 
-async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", save_report=True):
+async def audit_call(file_path, criteria=DEFAULT_CRITERIA, client_context="", save_report=True, user_email=None):
     print(f"\n{'='*50}\nAuditing: {file_path}\n{'='*50}")
-    dg = await transcribe_audio(file_path)
+    dg = await transcribe_audio(file_path, user_email=user_email)
     td = parse_transcript(dg)
     if "error" in td:
         return {"error": td["error"], "file": file_path}

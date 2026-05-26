@@ -796,6 +796,24 @@ async def audit_franchise_call(
     if not file.filename.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
         raise HTTPException(400, "Unsupported format. Use MP3, WAV, M4A, or OGG.")
 
+    # Duplicate prevention — check if same file was submitted in last 5 minutes
+    import time as _time
+    safe_filename_check = file.filename.replace(" ", "_")
+    recent_reports = sorted(Path("reports").glob("*.checklist.json"), reverse=True)[:10]
+    for rf in recent_reports:
+        try:
+            age = _time.time() - rf.stat().st_mtime
+            if age < 300:  # 5 minutes
+                import json as _json
+                with open(rf) as _f:
+                    _d = _json.load(_f)
+                if safe_filename_check in (_d.get("file", "")):
+                    raise HTTPException(400, f"This file was already audited recently. Please wait before re-submitting.")
+        except HTTPException:
+            raise
+        except:
+            pass
+
     file_content = await file.read()
     file_id = str(uuid.uuid4())[:8]
     safe_filename = file.filename.replace(" ", "_")
@@ -806,7 +824,7 @@ async def audit_franchise_call(
     try:
         from auditor import BURGER_SINGH_CRITERIA, score_call_checklist, generate_report_checklist
         from auditor import transcribe_audio, parse_transcript
-        dg = await transcribe_audio(str(file_path))
+        dg = await transcribe_audio(str(file_path), user_email=user["email"])
         td = parse_transcript(dg)
         if "error" in td:
             raise HTTPException(500, td["error"])
@@ -1068,7 +1086,7 @@ async def audit_single_call(
 
     context = " ".join(filter(None, [f"Client: {client_name}" if client_name else "", f"Agent: {agent_name}" if agent_name else ""])).strip()
     try:
-        report = await audit_call(str(file_path), criteria, context, save_report=False)
+        report = await audit_call(str(file_path), criteria, context, save_report=False, user_email=user["email"])
     except Exception as e:
         raise HTTPException(500, f"Audit failed: {str(e)}")
 
