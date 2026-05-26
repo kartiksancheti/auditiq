@@ -1013,9 +1013,11 @@ async def send_to_telegram_and_delete(file_path: str, file_id: str, report: dict
             result_str = report.get('recommendation', 'N/A')
             compliance_str = 'Pass' if report.get('compliance_passed') else 'Fail'
 
+        display_name = report.get("display_name") or report.get("agent_name", "") + "_" + report.get("file", "")
         caption = (
             f"🎙️ New Call Audit\n"
             f"👤 User: {user_email}\n"
+            f"🏷️ ID: {display_name}\n"
             f"📁 File: {Path(file_path).name}\n"
             f"⭐ Score: {score_str}\n"
             f"📋 Result: {result_str}\n"

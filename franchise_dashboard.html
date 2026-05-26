@@ -243,7 +243,7 @@ function renderTable(reports) {
     var duration = r.call_metadata && r.call_metadata.duration_seconds ? formatDuration(r.call_metadata.duration_seconds) : '-';
     rows += '<tr>';
     rows += '<td style="font-weight:600">' + (r.agent_name || '—') + '</td>';
-    rows += '<td style="font-size:11px;color:#888;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.file || '-') + '</td>';
+    rows += '<td style="font-size:11px;color:#888;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.display_name || r.file || '-') + '</td>';
     rows += '<td>' + duration + '</td>';
     rows += '<td><span class="score-pill ' + pillClass + '">' + score + '/' + max + '</span></td>';
     rows += '<td style="color:#888">' + pct + '%</td>';
@@ -395,7 +395,7 @@ function viewReport(idx) {
       <div>
         <div style="font-size:11px;color:#aaa;margin-bottom:4px">FRANCHISE CALL AUDIT</div>
         <div style="font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:2px">${r.agent_name || 'Agent'}</div>
-        <div style="font-size:12px;color:#888">${r.file || ''} · ${r.audited_at ? new Date(r.audited_at).toLocaleString('en-IN') : ''}</div>
+        <div style="font-size:12px;color:#888">${r.display_name || r.file || ''} · ${r.audited_at ? new Date(r.audited_at).toLocaleString('en-IN') : ''}</div>
       </div>
       <div style="text-align:center">
         <div style="font-size:38px;font-weight:800;color:${scoreColor};line-height:1">${score}<span style="font-size:16px;color:#ccc">/${max}</span></div>
@@ -436,7 +436,7 @@ function exportCSV() {
     var pct = Math.round(score / max * 100);
     var duration = r.call_metadata && r.call_metadata.duration_seconds ? formatDuration(r.call_metadata.duration_seconds) : '-';
     var date = r.audited_at ? new Date(r.audited_at).toLocaleDateString('en-IN') : '-';
-    var row = [r.agent_name || '', r.file || '', duration, score, max, pct + '%', date];
+    var row = [r.agent_name || '', r.display_name || r.file || '', duration, score, max, pct + '%', date];
     // Add each parameter as a column
     (r.checklist || []).forEach(function(c) {
       row.push(c.passed ? 'COVERED (' + c.points_earned + '/' + c.points_max + ')' : 'MISSED (0/' + c.points_max + ')');
