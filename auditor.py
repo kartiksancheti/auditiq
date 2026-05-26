@@ -32,7 +32,7 @@ BURGER_SINGH_CRITERIA = [
     {"key": "prospect_age", "label": "Prospect age collected?", "hint": "check if prospect age was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if age appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "prospect_email", "label": "Prospect email collected?", "hint": "check if email was mentioned/used anywhere in call — agent may already have it in CRM so check if agent referenced it, prospect mentioned it, or it came up anywhere. Mark true if email appears anywhere in conversation", "points": 0.5, "group": "Ask Right Questions", "negative": False},
     {"key": "reference", "label": "Reference — how did they hear about Burger Singh?", "points": 2, "group": "Ask Right Questions", "negative": False},
-    {"key": "profession", "label": "Prospect profession asked?", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "profession", "label": "Prospect profession asked?", "hint": "check if agent asked about prospect's job, work, business, occupation, kya karte hain, profession, job type, service ya business. Mark true if asked anywhere in the call", "points": 2, "group": "Ask Right Questions", "negative": False},
     {"key": "shop_own_rent", "label": "Shop Own or Rent discussed?", "points": 2, "group": "Ask Right Questions", "negative": False},
     {"key": "partnership_solo", "label": "Partnership or Solo discussed?", "points": 2, "group": "Ask Right Questions", "negative": False},
     {"key": "timeline", "label": "Timeline to open outlet asked?", "points": 2, "group": "Ask Right Questions", "negative": False},
@@ -214,8 +214,10 @@ def extract_agent_segments(td, agent_speaker):
 # TRANSCRIPTION (Sarvam)
 # ─────────────────────────────────────────────
 
-# Users that stay on Sarvam (empty = everyone uses AssemblyAI)
-SARVAM_USERS = set()
+# Users that stay on Sarvam
+SARVAM_USERS = {
+    "musicbeats897@gmail.com",
+}
 
 async def transcribe_audio(file_path, user_email=None):
     if user_email and user_email.lower() in SARVAM_USERS:
@@ -245,45 +247,16 @@ async def _transcribe_assemblyai(file_path):
             raise Exception(f"AssemblyAI error: {transcript.error}")
         print(f"[assemblyai] Done. Language: {transcript.json_response.get('language_code')}. Utterances: {len(transcript.utterances)}")
 
-        # Convert Devanagari to Hinglish Roman via LLaMA
-        import re
-        def needs_conversion(text):
-            return bool(re.search(r"[ऀ-ॿ]", text))
-
-        def convert_to_hinglish(utterances_text):
-            if not any(needs_conversion(t) for t in utterances_text):
-                return utterances_text
-            from groq import Groq as GroqClient
-            groq_client = GroqClient(api_key=os.getenv("GROQ_API_KEY"))
-            all_text = "\n".join(utterances_text)
-            response = groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[{
-                    "role": "user",
-                    "content": "Convert this Hindi/Devanagari text to natural Hinglish Roman script.\nRules:\n- Write Hindi words exactly as spoken in Roman letters\n- Keep English words as-is\n- Natural conversational style like WhatsApp Hinglish\n- Example: मेरा नाम गौरव है → Mera naam Gaurav hai\n- One line in = one line out, same order\n- Return ONLY converted lines, nothing else\n\nText:\n" + all_text
-                }],
-                temperature=0.1,
-                max_tokens=3000,
-            )
-            converted = response.choices[0].message.content.strip().split("\n")
-            converted = [l.strip() for l in converted if l.strip()]
-            # Pad if LLaMA returned fewer lines
-            while len(converted) < len(utterances_text):
-                converted.append(utterances_text[len(converted)])
-            return converted
-
-        raw_texts = [u.text for u in transcript.utterances]
-        hinglish_texts = convert_to_hinglish(raw_texts)
-        print(f"[assemblyai] Hinglish conversion done")
-
+        # Use raw AssemblyAI transcript directly (reliable, no hallucination)
         utterances = []
-        for i, u in enumerate(transcript.utterances):
+        for u in transcript.utterances:
             utterances.append({
                 "speaker_id": "0" if u.speaker == "A" else "1",
-                "transcript": hinglish_texts[i] if i < len(hinglish_texts) else u.text,
+                "transcript": u.text,
                 "start_time_seconds": round(u.start / 1000, 1),
                 "end_time_seconds": round(u.end / 1000, 1),
             })
+        print(f"[assemblyai] Using raw transcript - {len(utterances)} utterances")
         return {"diarized_transcript": {"entries": utterances}}
 
     loop = asyncio.get_event_loop()
@@ -604,6 +577,18 @@ IMPORTANT RULES:
 - For POSITIVE parameters: return true if agent covered it, false if missed.
 - Always check speaker labels before making a judgement.
 - Speaker labels may occasionally be wrong due to diarization errors. Judge based on the CONTENT and CONTEXT of what was said, not just the speaker label. If a line sounds like it was said by the agent but is labelled as Customer, score it as agent's line.
+- The transcript may contain a mix of Hindi (Devanagari), English and Hinglish (Roman Hindi). Understand all three formats equally.
+- For each parameter, search the ENTIRE transcript thoroughly before marking as missed. A question or topic may appear anywhere in the call.
+- Common Hindi/Hinglish equivalents to know:
+  * profession/job = "kya karte hain", "job", "business", "kaam", "occupation", "service"
+  * location = "kahan", "city", "pin code", "area", "location"
+  * name = "naam", "aapka naam"
+  * investment = "invest", "paisa", "amount", "lakh"
+  * timeline = "kab", "kitne time", "plan", "months"
+  * shop = "shop", "dukan", "outlet", "space"
+  * partner = "partner", "akele", "family"
+  * time dedication = "time", "hours", "kitna time"
+- Mark a parameter as TRUE if the concept was discussed ANYWHERE in the call, even briefly.
 - For timestamp: find where in the transcript the agent covered that parameter. Give a tight 10-second range like "45.0s - 55.0s". If not found, use null.
 - Timestamps must come directly from the transcript timestamps shown as [Xs] at the start of each line.
 
@@ -626,14 +611,66 @@ Respond ONLY with valid JSON in this exact format:
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=800,
+        max_tokens=1500,
     )
     raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw)
+    result = json.loads(raw)
+
+    # Second pass — re-check any parameters that were marked False
+    # to avoid missing things in long transcripts
+    missed = [c for c in criteria_list
+              if not c["negative"] and
+              not result.get("checks", {}).get(c["key"], {}).get("passed", False)]
+
+    if missed:
+        print(f"[scoring] Second pass for {len(missed)} missed parameters...")
+        missed_keys = "\n".join([
+            f'{i+1}. "{c["key"]}": {c.get("hint", c["label"])}'
+            for i, c in enumerate(missed)
+        ])
+        second_prompt = f"""You are a Call QA Analyst. Re-check ONLY these parameters in the transcript below.
+Search the ENTIRE transcript thoroughly. The agent may have covered these topics anywhere in the call.
+The transcript may be in Hindi, English or Hinglish — understand all formats.
+
+TRANSCRIPT:
+{td.get("transcript")}
+
+PARAMETERS TO RE-CHECK (marked as missed in first pass):
+{missed_keys}
+
+Respond ONLY with JSON:
+{{
+  "checks": {{
+    {", ".join([f'"{c["key"]}": {{"passed": <true|false>, "timestamp": "<Xs - Ys or null>"}}' for c in missed])}
+  }}
+}}"""
+
+        r2 = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": second_prompt}],
+            temperature=0.1,
+            max_tokens=800,
+        )
+        raw2 = r2.choices[0].message.content.strip()
+        if raw2.startswith("```"):
+            raw2 = raw2.split("```")[1]
+            if raw2.startswith("json"):
+                raw2 = raw2[4:]
+        try:
+            result2 = json.loads(raw2)
+            # Merge second pass results — only update if second pass found it
+            for key, val in result2.get("checks", {}).items():
+                if val.get("passed"):
+                    result["checks"][key] = val
+                    print(f"[scoring] Second pass found: {key} ✅")
+        except Exception as e:
+            print(f"[scoring] Second pass parse error: {e}")
+
+    return result
 
 
 def generate_report_checklist(file_path, td, scores, criteria_list):
