@@ -214,10 +214,8 @@ def extract_agent_segments(td, agent_speaker):
 # TRANSCRIPTION (Sarvam)
 # ─────────────────────────────────────────────
 
-# Users that stay on Sarvam
-SARVAM_USERS = {
-    "salim@delightservices.in",
-}
+# Users that stay on Sarvam (empty = everyone uses AssemblyAI)
+SARVAM_USERS = set()
 
 async def transcribe_audio(file_path, user_email=None):
     if user_email and user_email.lower() in SARVAM_USERS:
