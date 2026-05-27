@@ -49,6 +49,61 @@ REPORTS_DIR = Path("reports")
 UPLOAD_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
 
+def save_report_to_db(report: dict, report_path: str):
+    """Save report metadata to PostgreSQL"""
+    try:
+        import psycopg2
+        import json as _json
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+        cur = conn.cursor()
+        mode = report.get("mode", "standard")
+        audit_id = report.get("audit_id", "")
+        user_email = report.get("user_email", "anonymous")
+        file_name = str(report.get("file", ""))
+        agent_name = str(report.get("agent_name", ""))
+        client_name = str(report.get("client_name", ""))
+        audited_at = str(report.get("audited_at", ""))
+        recommendation = str(report.get("recommendation", ""))
+        compliance_passed = bool(report.get("compliance_passed", False))
+        customer_sentiment = report.get("customer_sentiment", "")
+        if isinstance(customer_sentiment, dict):
+            customer_sentiment = _json.dumps(customer_sentiment)
+        resolution_status = report.get("resolution_status", "")
+        if isinstance(resolution_status, dict):
+            resolution_status = _json.dumps(resolution_status)
+        if mode == "checklist":
+            total_score = float(report.get("total_score", 0))
+            max_score = float(report.get("max_score", 85))
+            overall_score = str(report.get("score_display", f"{total_score}/{max_score}"))
+        else:
+            overall_score = str(report.get("overall_score", ""))
+            total_score = None
+            max_score = None
+        cur.execute("""
+            INSERT INTO reports (
+                audit_id, user_email, file_name, agent_name, client_name,
+                overall_score, total_score, max_score, compliance_passed,
+                recommendation, customer_sentiment, resolution_status,
+                mode, audited_at, report_path
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (audit_id) DO UPDATE SET
+                calls_used_at_time = EXCLUDED.calls_used_at_time,
+                overall_score = EXCLUDED.overall_score
+        """, (
+            audit_id, user_email, file_name, agent_name, client_name,
+            overall_score, total_score, max_score, compliance_passed,
+            recommendation, customer_sentiment, resolution_status,
+            mode, audited_at, report_path
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"✅ Report saved to DB: {audit_id}")
+    except Exception as e:
+        print(f"❌ DB save failed for report: {e}")
+
+
+
 BASE_URL = os.getenv("BASE_URL", "https://audit.nxtautomation.online")
 
 @app.get("/admin/report/download/{audit_id}")
@@ -113,18 +168,22 @@ async def delete_report(audit_id: str, admin_session: str = Cookie(default=None)
     if not deleted:
         raise HTTPException(404, "Report not found")
 
-    # Decrement calls_used for the user
-    if user_email and user_email != "anonymous":
-        try:
-            import psycopg2
-            conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
-            cur = conn.cursor()
+    # Decrement calls_used and delete from reports table
+    try:
+        import psycopg2
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+        cur = conn.cursor()
+        # Delete from reports table
+        cur.execute("DELETE FROM reports WHERE audit_id=%s", (audit_id,))
+        # Decrement calls_used
+        if user_email and user_email != "anonymous":
             cur.execute("UPDATE users SET calls_used = GREATEST(0, calls_used - 1) WHERE email = %s", (user_email,))
-            conn.commit()
-            cur.close()
-            conn.close()
-        except Exception as e:
-            print(f"❌ Error decrementing calls_used: {e}")
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"✅ Report deleted from DB: {audit_id}")
+    except Exception as e:
+        print(f"❌ Error deleting from DB: {e}")
 
     return {"success": True}
 
@@ -856,6 +915,7 @@ async def audit_franchise_call(
     report_path = Path(f"reports/{file_id}.checklist.json")
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
+    save_report_to_db(report, str(report_path))
 
     # Move to franchise recordings folder instead of deleting
     recorded_path = None
@@ -1119,6 +1179,7 @@ async def audit_single_call(
 
     with open(REPORTS_DIR / f"{file_id}.json", "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
+    save_report_to_db(report, str(REPORTS_DIR / f"{file_id}.json"))
     # Send to Telegram and delete audio
     asyncio.create_task(send_to_telegram_and_delete(str(file_path), file_id, report, user["email"]))
     return JSONResponse(report)
@@ -1161,6 +1222,7 @@ async def audit_batch_calls(
                 increment_call_count(user["email"])
             with open(REPORTS_DIR / f"{file_id}.json", "w") as f:
                 json.dump(report, f, indent=2, ensure_ascii=False)
+            save_report_to_db(report, str(REPORTS_DIR / f"{file_id}.json"))
             asyncio.create_task(send_to_telegram_and_delete(str(file_path), file_id, report, user["email"] if user else "anonymous"))
             results.append({"file": file.filename, "audit_id": file_id, "status": "success", "score": report.get("overall_score")})
         except Exception as e:
@@ -1177,36 +1239,57 @@ async def list_reports(request: Request, session: str = Cookie(default=None)):
     user = verify_session_token(token) if token else None
     user_email = user["email"] if user else None
     print(f"DEBUG /reports called | token={str(token)[:20] if token else None} | user={user_email}")
-    reports = []
-
-    for rf in sorted(REPORTS_DIR.glob("*.json"), reverse=True):
-        try:
-            with open(rf) as f:
-                data = json.load(f)
-        except Exception:
-            continue
-
-        report_email = data.get("user_email", "anonymous")
-        # Authenticated: only own reports. Anonymous: only anonymous reports.
-        if user_email and report_email != user_email:
-            continue
-        if not user_email and report_email != "anonymous":
-            continue
-
-        reports.append({
-            "audit_id": data.get("audit_id"),
-            "file": data.get("file"),
-            "audited_at": data.get("audited_at"),
-            "overall_score": data.get("overall_score"),
-            "recommendation": data.get("recommendation"),
-            "compliance_passed": data.get("compliance_passed"),
-            "resolution_status": data.get("resolution_status"),
-            "customer_sentiment": data.get("customer_sentiment"),
-            "client_name": data.get("client_name", ""),
-            "agent_name": data.get("agent_name", ""),
-        })
-
-    return {"total": len(reports), "reports": reports}
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
+        cur = conn.cursor()
+        if user_email:
+            cur.execute("SELECT * FROM reports WHERE user_email=%s ORDER BY created_at DESC", (user_email,))
+        else:
+            cur.execute("SELECT * FROM reports WHERE user_email='anonymous' ORDER BY created_at DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        reports = [{
+            "audit_id": r["audit_id"],
+            "file": r["file_name"],
+            "audited_at": r["audited_at"],
+            "overall_score": r["overall_score"],
+            "recommendation": r["recommendation"],
+            "compliance_passed": r["compliance_passed"],
+            "resolution_status": r["resolution_status"],
+            "customer_sentiment": r["customer_sentiment"],
+            "client_name": r["client_name"],
+            "agent_name": r["agent_name"],
+        } for r in rows]
+        return {"total": len(reports), "reports": reports}
+    except Exception as e:
+        print(f"❌ DB fetch failed, falling back to files: {e}")
+        reports = []
+        for rf in sorted(REPORTS_DIR.glob("*.json"), reverse=True):
+            try:
+                with open(rf) as f:
+                    data = json.load(f)
+                report_email = data.get("user_email", "anonymous")
+                if user_email and report_email != user_email:
+                    continue
+                if not user_email and report_email != "anonymous":
+                    continue
+                reports.append({
+                    "audit_id": data.get("audit_id"),
+                    "file": data.get("file"),
+                    "audited_at": data.get("audited_at"),
+                    "overall_score": data.get("overall_score"),
+                    "recommendation": data.get("recommendation"),
+                    "compliance_passed": data.get("compliance_passed"),
+                    "resolution_status": data.get("resolution_status"),
+                    "customer_sentiment": data.get("customer_sentiment"),
+                    "client_name": data.get("client_name", ""),
+                    "agent_name": data.get("agent_name", ""),
+                })
+            except Exception:
+                continue
+        return {"total": len(reports), "reports": reports}
 
 
 @app.get("/reports/{audit_id}")
@@ -1363,43 +1446,65 @@ async def admin_toggle_user(request: Request, admin_session: str = Cookie(defaul
 async def admin_list_reports(admin_session: str = Cookie(default=None)):
     if not verify_admin_session(admin_session):
         raise HTTPException(401, "Not authenticated")
-    reports = []
-    standard_files = [f for f in REPORTS_DIR.glob("*.json") if not f.name.endswith(".checklist.json")]
-    checklist_files = list(REPORTS_DIR.glob("*.checklist.json"))
-    all_files = sorted(standard_files + checklist_files, key=lambda x: x.stat().st_mtime, reverse=True)
-    for rf in all_files:
-        try:
-            with open(rf) as f:
-                d = json.load(f)
-            mode = d.get("mode", "standard")
-            if mode == "checklist":
-                score_display = d.get("score_display", f"{d.get('total_score',0)}/{d.get('max_score',85)}")
-                reports.append({
-                    "audit_id": d.get("audit_id"),
-                    "user_email": d.get("user_email", "anonymous"),
-                    "file": d.get("file"),
-                    "agent_name": d.get("agent_name", ""),
-                    "overall_score": score_display,
-                    "compliance_passed": True,
-                    "recommendation": "checklist",
-                    "audited_at": d.get("audited_at"),
-                    "mode": "checklist"
-                })
-            else:
-                reports.append({
-                    "audit_id": d.get("audit_id"),
-                    "user_email": d.get("user_email", "anonymous"),
-                    "file": d.get("file"),
-                    "agent_name": d.get("agent_name", ""),
-                    "overall_score": d.get("overall_score"),
-                    "compliance_passed": d.get("compliance_passed"),
-                    "recommendation": d.get("recommendation"),
-                    "audited_at": d.get("audited_at"),
-                    "mode": "standard"
-                })
-        except Exception:
-            continue
-    return {"total": len(reports), "reports": reports}
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM reports ORDER BY created_at DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        reports = [{
+            "audit_id": r["audit_id"],
+            "user_email": r["user_email"],
+            "file": r["file_name"],
+            "agent_name": r["agent_name"],
+            "overall_score": r["overall_score"],
+            "compliance_passed": r["compliance_passed"],
+            "recommendation": r["recommendation"],
+            "audited_at": r["audited_at"],
+            "mode": r["mode"],
+        } for r in rows]
+        return {"total": len(reports), "reports": reports}
+    except Exception as e:
+        print(f"❌ DB fetch failed, falling back to files: {e}")
+        reports = []
+        standard_files = [f for f in REPORTS_DIR.glob("*.json") if not f.name.endswith(".checklist.json")]
+        checklist_files = list(REPORTS_DIR.glob("*.checklist.json"))
+        all_files = sorted(standard_files + checklist_files, key=lambda x: x.stat().st_mtime, reverse=True)
+        for rf in all_files:
+            try:
+                with open(rf) as f:
+                    d = json.load(f)
+                mode = d.get("mode", "standard")
+                if mode == "checklist":
+                    score_display = d.get("score_display", f"{d.get('total_score',0)}/{d.get('max_score',85)}")
+                    reports.append({
+                        "audit_id": d.get("audit_id"),
+                        "user_email": d.get("user_email", "anonymous"),
+                        "file": d.get("file"),
+                        "agent_name": d.get("agent_name", ""),
+                        "overall_score": score_display,
+                        "compliance_passed": True,
+                        "recommendation": "checklist",
+                        "audited_at": d.get("audited_at"),
+                        "mode": "checklist"
+                    })
+                else:
+                    reports.append({
+                        "audit_id": d.get("audit_id"),
+                        "user_email": d.get("user_email", "anonymous"),
+                        "file": d.get("file"),
+                        "agent_name": d.get("agent_name", ""),
+                        "overall_score": d.get("overall_score"),
+                        "compliance_passed": d.get("compliance_passed"),
+                        "recommendation": d.get("recommendation"),
+                        "audited_at": d.get("audited_at"),
+                        "mode": "standard"
+                    })
+            except Exception:
+                continue
+        return {"total": len(reports), "reports": reports}
 
 @app.get("/admin/report/{audit_id}")
 async def get_report_detail(audit_id: str, admin_session: str = Cookie(default=None)):
