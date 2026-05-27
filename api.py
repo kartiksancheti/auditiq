@@ -958,9 +958,9 @@ async def checklist_reports_list(request: Request, session: str = Cookie(default
         conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
         cur = conn.cursor()
         if user:
-            cur.execute("SELECT audit_id, report_path FROM reports WHERE user_email=%s AND mode='checklist' ORDER BY created_at DESC", (user.get("email"),))
+            cur.execute("SELECT audit_id, report_path FROM reports WHERE user_email=%s AND mode='checklist' ORDER BY audited_at DESC", (user.get("email"),))
         else:
-            cur.execute("SELECT audit_id, report_path FROM reports WHERE mode='checklist' ORDER BY created_at DESC")
+            cur.execute("SELECT audit_id, report_path FROM reports WHERE mode='checklist' ORDER BY audited_at DESC")
         rows = cur.fetchall()
         cur.close()
         conn.close()
