@@ -64,7 +64,13 @@ def save_report_to_db(report: dict, report_path: str):
         client_name = str(report.get("client_name", ""))
         audited_at = str(report.get("audited_at", ""))
         recommendation = str(report.get("recommendation", ""))
-        compliance_passed = bool(report.get("compliance_passed", False))
+        # For checklist mode, calculate compliance based on score
+        if mode == "checklist":
+            total_score = report.get("total_score", 0)
+            max_score = report.get("max_score", 85)
+            compliance_passed = float(total_score) >= (float(max_score) * 0.7)
+        else:
+            compliance_passed = bool(report.get("compliance_passed", False))
         customer_sentiment = report.get("customer_sentiment", "")
         if isinstance(customer_sentiment, dict):
             customer_sentiment = _json.dumps(customer_sentiment)
