@@ -1308,12 +1308,14 @@ async def admin_me(admin_session: str = Cookie(default=None)):
 async def admin_list_users(admin_session: str = Cookie(default=None)):
     if not verify_admin_session(admin_session):
         raise HTTPException(401, "Not authenticated")
-    conn = _sqlite3.connect("leads.db")
-    rows = conn.execute(
-        "SELECT email, name, company, plan, calls_used, calls_limit, is_active, created_at FROM users ORDER BY created_at DESC"
-    ).fetchall()
+    import psycopg2, psycopg2.extras
+    conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn.cursor()
+    cur.execute("SELECT email, name, company, plan, calls_used, calls_limit, is_active, created_at FROM users ORDER BY created_at DESC")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
-    users = [{"email": r[0], "name": r[1], "company": r[2], "plan": r[3], "calls_used": r[4], "calls_limit": r[5], "is_active": bool(r[6]), "created_at": r[7]} for r in rows]
+    users = [{"email": r["email"], "name": r["name"], "company": r["company"], "plan": r["plan"], "calls_used": r["calls_used"], "calls_limit": r["calls_limit"], "is_active": bool(r["is_active"]), "created_at": r["created_at"]} for r in rows]
     return {"total": len(users), "users": users}
 
 @app.post("/admin/users/update")
@@ -1324,12 +1326,15 @@ async def admin_update_user(request: Request, admin_session: str = Cookie(defaul
     email = data.get("email")
     if not email:
         raise HTTPException(400, "Email required")
-    conn = _sqlite3.connect("leads.db")
+    import psycopg2
+    conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+    cur = conn.cursor()
     if data.get("reset_usage"):
-        conn.execute("UPDATE users SET plan=?, calls_limit=?, calls_used=0 WHERE email=?", [data.get("plan"), data.get("calls_limit"), email])
+        cur.execute("UPDATE users SET plan=%s, calls_limit=%s, calls_used=0 WHERE email=%s", [data.get("plan"), data.get("calls_limit"), email])
     else:
-        conn.execute("UPDATE users SET plan=?, calls_limit=? WHERE email=?", [data.get("plan"), data.get("calls_limit"), email])
+        cur.execute("UPDATE users SET plan=%s, calls_limit=%s WHERE email=%s", [data.get("plan"), data.get("calls_limit"), email])
     conn.commit()
+    cur.close()
     conn.close()
     return {"success": True}
 
@@ -1341,9 +1346,12 @@ async def admin_toggle_user(request: Request, admin_session: str = Cookie(defaul
     email = data.get("email")
     if not email:
         raise HTTPException(400, "Email required")
-    conn = _sqlite3.connect("leads.db")
-    conn.execute("UPDATE users SET is_active=? WHERE email=?", [1 if data.get("is_active") else 0, email])
+    import psycopg2
+    conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET is_active=%s WHERE email=%s", [1 if data.get("is_active") else 0, email])
     conn.commit()
+    cur.close()
     conn.close()
     return {"success": True}
 
@@ -1416,16 +1424,18 @@ def verify_franchise_session(franchise_session: str):
     if not franchise_session:
         return None
     try:
-        conn = _sqlite3.connect("leads.db")
-        row = conn.execute(
-            "SELECT email FROM sessions WHERE token=? AND expires_at > datetime('now')",
-            [franchise_session]
-        ).fetchone()
+        import psycopg2
+        from datetime import datetime as _dt
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+        cur = conn.cursor()
+        cur.execute("SELECT email FROM sessions WHERE token=%s AND expires_at > %s", [franchise_session, _dt.now().strftime("%Y-%m-%dT%H:%M:%S")])
+        row = cur.fetchone()
+        cur.close()
         conn.close()
         if row and row[0] in FRANCHISE_CLIENTS:
             return row[0]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"franchise session error: {e}")
     return None
 
 @app.get("/franchise/login", response_class=HTMLResponse)

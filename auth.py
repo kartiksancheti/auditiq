@@ -1,10 +1,11 @@
 """
-AuditIQ Authentication - Magic Link System
+AuditIQ Authentication - Magic Link System (PostgreSQL)
 """
 
 import os
-import sqlite3
 import secrets
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import aiosmtplib
@@ -13,18 +14,26 @@ from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 
-DB_PATH = "leads.db"
 BASE_URL = os.getenv("BASE_URL", "https://audit.nxtautomation.online")
-
 TRIAL_LIMIT = 50
 WARNING_LIMIT = 40
 
-# ── DB Setup ────────────────────────────────────────────────────────────────────
+def get_db():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", 5434)),
+        database=os.getenv("DB_NAME", "auditiq"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASSWORD", "VPS@31"),
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
+
 def init_auth_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
             name TEXT,
             company TEXT,
@@ -35,9 +44,9 @@ def init_auth_db():
             is_active INTEGER DEFAULT 1
         )
     """)
-    conn.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS magic_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT NOT NULL,
             token TEXT UNIQUE NOT NULL,
             expires_at TEXT NOT NULL,
@@ -45,68 +54,89 @@ def init_auth_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id SERIAL PRIMARY KEY,
+            email TEXT NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
+    cur.close()
     conn.close()
 
 def create_or_get_user(email, name, company, plan="trial"):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+    user = cur.fetchone()
     if not user:
-        conn.execute(
-            "INSERT INTO users (email, name, company, plan) VALUES (?, ?, ?, ?)",
+        cur.execute(
+            "INSERT INTO users (email, name, company, plan) VALUES (%s, %s, %s, %s)",
             (email, name, company, plan)
         )
         conn.commit()
-        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+        user = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(user)
 
 def get_user_by_email(email):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+    user = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(user) if user else None
 
 def get_user_by_token(token):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_db()
+    cur = conn.cursor()
     now = datetime.now().isoformat()
-    token_row = conn.execute(
-        "SELECT * FROM magic_tokens WHERE token = ? AND used = 0 AND expires_at > ?",
+    cur.execute(
+        "SELECT * FROM magic_tokens WHERE token = %s AND used = 0 AND expires_at > %s",
         (token, now)
-    ).fetchone()
+    )
+    token_row = cur.fetchone()
     if not token_row:
+        cur.close()
         conn.close()
         return None
-    # Mark token as used
-    conn.execute("UPDATE magic_tokens SET used = 1 WHERE token = ?", (token,))
+    cur.execute("UPDATE magic_tokens SET used = 1 WHERE token = %s", (token,))
     conn.commit()
-    user = conn.execute("SELECT * FROM users WHERE email = ?", (token_row["email"],)).fetchone()
+    cur.execute("SELECT * FROM users WHERE email = %s", (token_row["email"],))
+    user = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(user) if user else None
 
 def create_magic_token(email):
     token = secrets.token_urlsafe(32)
     expires_at = (datetime.now() + timedelta(hours=24)).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    # Delete old tokens for this email
-    conn.execute("DELETE FROM magic_tokens WHERE email = ?", (email,))
-    conn.execute(
-        "INSERT INTO magic_tokens (email, token, expires_at) VALUES (?, ?, ?)",
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM magic_tokens WHERE email = %s", (email,))
+    cur.execute(
+        "INSERT INTO magic_tokens (email, token, expires_at) VALUES (%s, %s, %s)",
         (email, token, expires_at)
     )
     conn.commit()
+    cur.close()
     conn.close()
     return token
 
 def increment_call_count(email):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("UPDATE users SET calls_used = calls_used + 1 WHERE email = ?", (email,))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET calls_used = calls_used + 1 WHERE email = %s", (email,))
     conn.commit()
-    user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+    user = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(user)
 
@@ -125,45 +155,33 @@ def check_call_limit(email):
 def create_session_token(email):
     token = secrets.token_urlsafe(48)
     expires_at = (datetime.now() + timedelta(days=7)).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL,
-            token TEXT UNIQUE NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute(
-        "INSERT INTO sessions (email, token, expires_at) VALUES (?, ?, ?)",
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (email, token, expires_at) VALUES (%s, %s, %s)",
         (email, token, expires_at)
     )
     conn.commit()
+    cur.close()
     conn.close()
     return token
 
 def verify_session_token(token):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL,
-            token TEXT UNIQUE NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    conn = get_db()
+    cur = conn.cursor()
     now = datetime.now().isoformat()
-    session = conn.execute(
-        "SELECT * FROM sessions WHERE token = ? AND expires_at > ?",
+    cur.execute(
+        "SELECT * FROM sessions WHERE token = %s AND expires_at > %s",
         (token, now)
-    ).fetchone()
+    )
+    session = cur.fetchone()
     if not session:
+        cur.close()
         conn.close()
         return None
-    user = conn.execute("SELECT * FROM users WHERE email = ?", (session["email"],)).fetchone()
+    cur.execute("SELECT * FROM users WHERE email = %s", (session["email"],))
+    user = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(user) if user else None
 
