@@ -116,10 +116,12 @@ async def delete_report(audit_id: str, admin_session: str = Cookie(default=None)
     # Decrement calls_used for the user
     if user_email and user_email != "anonymous":
         try:
-            import sqlite3 as _sq
-            conn = _sq.connect("leads.db")
-            conn.execute("UPDATE users SET calls_used = MAX(0, calls_used - 1) WHERE email = ?", (user_email,))
+            import psycopg2
+            conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET calls_used = GREATEST(0, calls_used - 1) WHERE email = %s", (user_email,))
             conn.commit()
+            cur.close()
             conn.close()
         except:
             pass
@@ -1254,7 +1256,8 @@ async def list_leads():
 #  ADMIN PANEL
 # ══════════════════════════════════════════════════════════════════════════════
 
-import sqlite3 as _sqlite3
+import psycopg2
+import psycopg2.extras
 
 ADMIN_USERS = {
     os.getenv("ADMIN_EMAIL"): os.getenv("ADMIN_PASSWORD")
@@ -1264,11 +1267,12 @@ def verify_admin_session(admin_session: str):
     if not admin_session:
         return None
     try:
-        conn = _sqlite3.connect("leads.db")
-        row = conn.execute(
-            "SELECT email FROM sessions WHERE token=? AND expires_at > datetime('now')",
-            [admin_session]
-        ).fetchone()
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31")
+        cur = conn.cursor()
+        from datetime import datetime as _dt
+        cur.execute("SELECT email FROM sessions WHERE token=%s AND expires_at > %s", [admin_session, _dt.now().strftime("%Y-%m-%dT%H:%M:%S")])
+        row = cur.fetchone()
+        cur.close()
         conn.close()
         if row and row[0] in ADMIN_USERS:
             return {"email": row[0]}
