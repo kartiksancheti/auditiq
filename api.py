@@ -123,8 +123,8 @@ async def delete_report(audit_id: str, admin_session: str = Cookie(default=None)
             conn.commit()
             cur.close()
             conn.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"❌ Error decrementing calls_used: {e}")
 
     return {"success": True}
 
