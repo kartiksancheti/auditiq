@@ -1280,9 +1280,9 @@ async def list_reports(request: Request, session: str = Cookie(default=None)):
         conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
         cur = conn.cursor()
         if user_email:
-            cur.execute("SELECT * FROM reports WHERE user_email=%s ORDER BY created_at DESC", (user_email,))
+            cur.execute("SELECT * FROM reports WHERE user_email=%s ORDER BY audited_at DESC", (user_email,))
         else:
-            cur.execute("SELECT * FROM reports WHERE user_email='anonymous' ORDER BY created_at DESC")
+            cur.execute("SELECT * FROM reports WHERE user_email='anonymous' ORDER BY audited_at DESC")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -1486,7 +1486,7 @@ async def admin_list_reports(admin_session: str = Cookie(default=None)):
         import psycopg2, psycopg2.extras
         conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
         cur = conn.cursor()
-        cur.execute("SELECT * FROM reports ORDER BY created_at DESC")
+        cur.execute("SELECT * FROM reports ORDER BY audited_at DESC")
         rows = cur.fetchall()
         cur.close()
         conn.close()
