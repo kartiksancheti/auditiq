@@ -953,15 +953,45 @@ async def checklist_reports_list(request: Request, session: str = Cookie(default
     user = verify_session_token(token) if token else None
     print(f"DEBUG /checklist-reports-list called | token={str(token)[:20] if token else None} | user={user.get('email') if user else None}")
     reports = []
-    for rf in sorted(Path("reports").glob("*.checklist.json"), key=lambda x: x.stat().st_mtime, reverse=True):
-        try:
-            with open(rf) as f:
-                d = json.load(f)
-            # Show report if user_email matches OR if admin viewing all
-            if user and d.get("user_email") == user.get("email"):
-                reports.append(d)
-        except Exception:
-            continue
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
+        cur = conn.cursor()
+        if user:
+            cur.execute("SELECT audit_id, report_path FROM reports WHERE user_email=%s AND mode='checklist' ORDER BY created_at DESC", (user.get("email"),))
+        else:
+            cur.execute("SELECT audit_id, report_path FROM reports WHERE mode='checklist' ORDER BY created_at DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        for row in rows:
+            try:
+                report_path = row["report_path"]
+                if report_path and Path(report_path).exists():
+                    with open(report_path) as f:
+                        d = json.load(f)
+                    reports.append(d)
+                else:
+                    audit_id = row["audit_id"]
+                    for pattern in [f"reports/{audit_id}.checklist.json", f"reports/{audit_id}.json"]:
+                        if Path(pattern).exists():
+                            with open(pattern) as f:
+                                d = json.load(f)
+                            reports.append(d)
+                            break
+            except Exception as e:
+                print(f"❌ Error loading report {row['audit_id']}: {e}")
+                continue
+    except Exception as e:
+        print(f"❌ DB fetch failed, falling back to files: {e}")
+        for rf in sorted(Path("reports").glob("*.checklist.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                with open(rf) as f:
+                    d = json.load(f)
+                if user and d.get("user_email") == user.get("email"):
+                    reports.append(d)
+            except Exception:
+                continue
     return {"reports": reports}
 
 @app.get("/checklist-report", response_class=HTMLResponse)
