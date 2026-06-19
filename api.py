@@ -45,6 +45,10 @@ FRANCHISE_USERS = {
     "salim@delightservices.in": os.getenv("FRANCHISE_PASSWORD_SALIM", "delight2024"),
     "musicbeats897@gmail.com":  os.getenv("FRANCHISE_PASSWORD_MUSIC", "music2024"),
 }
+
+DASHBOARD_USERS = {
+    "tauseef@delightservices.in": os.getenv("FRANCHISE_PASSWORD_TAUSEEF", "tauseef2026"),
+}
 REPORTS_DIR = Path("reports")
 UPLOAD_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
@@ -1600,4 +1604,22 @@ async def franchise_login(request: Request, email: str = Form(...), password: st
 async def franchise_logout():
     response = RedirectResponse(url="/franchise/login")
     response.delete_cookie("franchise_session")
+    return response
+
+@app.get("/dashboard/login", response_class=HTMLResponse)
+async def dashboard_login_page():
+    return open("dashboard_login.html").read()
+
+@app.post("/dashboard/login")
+@limiter.limit("5/minute")
+async def dashboard_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    expected = DASHBOARD_USERS.get(email)
+    if not expected or password != expected:
+        raise HTTPException(401, "Invalid credentials")
+    user = get_user_by_email(email)
+    if not user:
+        raise HTTPException(404, "No account found with this email.")
+    session_token = create_session_token(email)
+    response = JSONResponse({"success": True, "token": session_token})
+    response.set_cookie(key="session", value=session_token, max_age=86400, httponly=True, samesite="lax")
     return response
