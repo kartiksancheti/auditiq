@@ -331,7 +331,12 @@ async function loadReports() {
       return;
     }
     document.getElementById('sTotalCalls').textContent = reports.length;
-    const avg = reports.reduce(function(s, r) { return s + (r.overall_score || 0); }, 0) / reports.length;
+    const avg = reports.reduce(function(s, r) {
+      var sc = String(r.overall_score || '0');
+      var parts = sc.split('/');
+      var num = parts.length === 2 ? (parseFloat(parts[0]) / parseFloat(parts[1])) * 10 : parseFloat(sc);
+      return s + (isNaN(num) ? 0 : num);
+    }, 0) / reports.length;
     document.getElementById('sAvgScore').textContent = avg.toFixed(1);
     document.getElementById('sFlagged').textContent = reports.filter(function(r) { return r.recommendation === 'critical_review' || r.recommendation === 'coaching_needed'; }).length;
     const compliantPct = Math.round(reports.filter(function(r) { return r.compliance_passed; }).length / reports.length * 100);

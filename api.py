@@ -92,9 +92,7 @@ def save_report_to_db(report: dict, report_path: str):
                 recommendation, customer_sentiment, resolution_status,
                 mode, audited_at, report_path
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (audit_id) DO UPDATE SET
-                calls_used_at_time = EXCLUDED.calls_used_at_time,
-                overall_score = EXCLUDED.overall_score
+            ON CONFLICT (audit_id) DO NOTHING
         """, (
             audit_id, user_email, file_name, agent_name, client_name,
             overall_score, total_score, max_score, compliance_passed,

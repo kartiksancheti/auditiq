@@ -15,3 +15,6 @@ franchise_recordings/
 *.wav
 *.m4a
 *.ogg
+*.bak-*
+*.backup
+reset.log
