@@ -950,19 +950,30 @@ async def checklist_list():
     return open("checklist_list.html").read()
 
 @app.get("/checklist-reports-list")
-async def checklist_reports_list(request: Request, session: str = Cookie(default=None)):
+async def checklist_reports_list(request: Request, session: str = Cookie(default=None), page: int = 1, limit: int = 20):
     token = request.headers.get("X-Session-Token") or request.query_params.get("token") or session
     user = verify_session_token(token) if token else None
-    print(f"DEBUG /checklist-reports-list called | token={str(token)[:20] if token else None} | user={user.get('email') if user else None}")
+    print(f"DEBUG /checklist-reports-list called | token={str(token)[:20] if token else None} | user={user.get('email') if user else None} | page={page} limit={limit}")
     reports = []
+    total_count = 0
+    if page < 1:
+        page = 1
+    if limit < 1:
+        limit = 20
+    offset = (page - 1) * limit
     try:
         import psycopg2, psycopg2.extras
         conn = psycopg2.connect(host="localhost", port=5434, database="auditiq", user="postgres", password="VPS@31", cursor_factory=psycopg2.extras.RealDictCursor)
         cur = conn.cursor()
         if user:
-            cur.execute("SELECT audit_id, report_path FROM reports WHERE user_email=%s AND mode='checklist' ORDER BY audited_at DESC", (user.get("email"),))
+            cur.execute("SELECT COUNT(*) AS c FROM reports WHERE user_email=%s AND mode='checklist'", (user.get("email"),))
         else:
-            cur.execute("SELECT audit_id, report_path FROM reports WHERE mode='checklist' ORDER BY audited_at DESC")
+            cur.execute("SELECT COUNT(*) AS c FROM reports WHERE mode='checklist'")
+        total_count = cur.fetchone()["c"]
+        if user:
+            cur.execute("SELECT audit_id, report_path FROM reports WHERE user_email=%s AND mode='checklist' ORDER BY audited_at DESC LIMIT %s OFFSET %s", (user.get("email"), limit, offset))
+        else:
+            cur.execute("SELECT audit_id, report_path FROM reports WHERE mode='checklist' ORDER BY audited_at DESC LIMIT %s OFFSET %s", (limit, offset))
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -986,15 +997,19 @@ async def checklist_reports_list(request: Request, session: str = Cookie(default
                 continue
     except Exception as e:
         print(f"❌ DB fetch failed, falling back to files: {e}")
+        all_matched = []
         for rf in sorted(Path("reports").glob("*.checklist.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
                 with open(rf) as f:
                     d = json.load(f)
                 if user and d.get("user_email") == user.get("email"):
-                    reports.append(d)
+                    all_matched.append(d)
             except Exception:
                 continue
-    return {"reports": reports}
+        total_count = len(all_matched)
+        reports = all_matched[offset:offset + limit]
+    total_pages = (total_count + limit - 1) // limit if limit else 1
+    return {"reports": reports, "total": total_count, "page": page, "limit": limit, "total_pages": total_pages}
 
 @app.get("/checklist-report", response_class=HTMLResponse)
 async def checklist_report():
@@ -1150,7 +1165,7 @@ async def send_to_telegram_and_delete(file_path: str, file_id: str, report: dict
                 )
         print(f"✅ Sent to Telegram: {file_id}")
     except Exception as e:
-        print(f"❌ Telegram send failed: {e}")
+        import traceback; print(f"❌ Telegram send failed: {type(e).__name__}: {e}"); traceback.print_exc()
     finally:
         try:
             Path(file_path).unlink()
@@ -1219,6 +1234,7 @@ async def audit_single_call(
         json.dump(report, f, indent=2, ensure_ascii=False)
     save_report_to_db(report, str(REPORTS_DIR / f"{file_id}.json"))
     # Send to Telegram and delete audio
+    print(f"[DEBUG] About to send to Telegram: file_path={file_path}, file_id={file_id}")
     asyncio.create_task(send_to_telegram_and_delete(str(file_path), file_id, report, user["email"]))
     return JSONResponse(report)
 

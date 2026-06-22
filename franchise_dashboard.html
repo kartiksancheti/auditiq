@@ -199,18 +199,46 @@ function getCookie(name) {
   return v ? v[2] : null;
 }
 
-async function loadReports() {
+var currentPage = 1;
+var totalPages = 1;
+var PAGE_SIZE = 20;
+
+async function loadReports(page) {
+  page = page || 1;
+  document.getElementById('tableWrap').innerHTML = '<div class="empty">Loading reports...</div>';
   try {
-    var res = await fetch('/checklist-reports-list', {headers: {'X-Session-Token': SESSION_TOKEN}});
+    var res = await fetch('/checklist-reports-list?page=' + page + '&limit=' + PAGE_SIZE, {headers: {'X-Session-Token': SESSION_TOKEN}});
     var listText = await res.text();
     var data = {};
     try { data = JSON.parse(listText); } catch(e) { console.error('checklist-reports-list bad response:', listText.substring(0,200)); data = {reports:[]}; }
     allReports = data.reports || [];
+    currentPage = data.page || 1;
+    totalPages = data.total_pages || 1;
     populateAgentFilter();
     renderTable(allReports);
+    renderPagination(data.total || 0);
   } catch(e) {
     document.getElementById('tableWrap').innerHTML = '<div class="empty">Error loading reports.</div>';
   }
+}
+
+function renderPagination(total) {
+  var existing = document.getElementById('paginationBar');
+  if (existing) existing.remove();
+  if (totalPages <= 1) return;
+  var bar = document.createElement('div');
+  bar.id = 'paginationBar';
+  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid #f0f0f0;font-size:13px;color:#666';
+  var prevDisabled = currentPage <= 1;
+  var nextDisabled = currentPage >= totalPages;
+  bar.innerHTML = '<span>Page ' + currentPage + ' of ' + totalPages + ' (' + total + ' total calls)</span>' +
+    '<div style="display:flex;gap:8px">' +
+    '<button id="prevPageBtn" style="padding:6px 14px;border-radius:6px;border:1px solid #ddd;cursor:pointer;background:' + (prevDisabled ? '#f5f5f5' : '#fff') + '" ' + (prevDisabled ? 'disabled' : '') + '>&larr; Prev</button>' +
+    '<button id="nextPageBtn" style="padding:6px 14px;border-radius:6px;border:1px solid #ddd;cursor:pointer;background:' + (nextDisabled ? '#f5f5f5' : '#fff') + '" ' + (nextDisabled ? 'disabled' : '') + '>Next &rarr;</button>' +
+    '</div>';
+  document.querySelector('.reports-card').appendChild(bar);
+  document.getElementById('prevPageBtn').onclick = function() { if (!prevDisabled) loadReports(currentPage - 1); };
+  document.getElementById('nextPageBtn').onclick = function() { if (!nextDisabled) loadReports(currentPage + 1); };
 }
 
 function populateAgentFilter() {
