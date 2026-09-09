@@ -47,17 +47,18 @@ BURGER_SINGH_CRITERIA = [
     {"key": "partnership_solo", "label": "Partnership or Solo discussed?", "hint": "check if agent asked whether prospect will do business alone or with a partner. Look for: 'partner', 'partnership', 'akele', 'solo', 'family', 'friend', 'co-founder', 'sahyogi', 'mil ke', 'alone'. Mark true if partnership or solo business was discussed anywhere", "points": 2, "group": "Ask Right Questions", "negative": False},
     {"key": "timeline", "label": "Timeline to open outlet asked?", "hint": "check if agent asked when prospect plans to open the outlet or their timeline. Look for: 'kab', 'when', 'timeline', 'months', 'mahine', 'plan', 'kitne time mein', 'start kab', 'opening', 'launch', '1 month', '3 months', '6 months', any time period mentioned for opening. Mark true if timeline was discussed", "points": 2, "group": "Ask Right Questions", "negative": False},
     {"key": "oversee_store", "label": "Who will oversee the franchise store asked?", "hint": "check if agent asked who will manage or oversee the store daily. Look for: 'kaun dekhega', 'manage', 'oversee', 'handle', 'run karega', 'daily operations', 'store manager', 'khud', 'self', 'family member', 'hired manager', 'dekhbhal'. Mark true if store management/oversight was discussed", "points": 2, "group": "Ask Right Questions", "negative": False},
-    {"key": "agreed_25_lakhs", "label": "Prospect agreed/acknowledged 25 lakhs investment?", "hint": "check if prospect acknowledged or agreed to the 25 lakh investment amount. Look for: '25 lakh', '25L', 'investment amount', 'comfortable', 'theek hai', 'okay', 'haan', 'samajh gaya', 'agreed', prospect saying yes after investment amount was mentioned. Mark true if prospect acknowledged the 25 lakh amount anywhere", "points": 2, "group": "Ask Right Questions", "negative": False},
+    {"key": "agreed_30_lakhs", "label": "Prospect agreed/acknowledged 30 lakhs investment?", "hint": "check if prospect acknowledged or agreed to the ~30 lakh investment amount. Look for: '30 lakh', '30L', 'investment amount', 'comfortable', 'theek hai', 'okay', 'haan', 'samajh gaya', 'agreed', prospect saying yes after investment amount was mentioned. Mark true if prospect acknowledged the ~30 lakh amount anywhere", "points": 2, "group": "Ask Right Questions", "negative": False},
     {"key": "time_dedication", "label": "Time dedication discussed?", "hint": "check if agent asked how much time prospect can dedicate to the business. Look for: 'time', 'kitna time', 'hours', 'ghante', 'full time', 'part time', 'daily', 'roz', 'dedication', 'available', 'busy', 'job ke saath'. Mark true if time dedication or availability was discussed", "points": 2, "group": "Ask Right Questions", "negative": False},
 
     # Group 3 — Explains Co-investment Model Correctly (25 pts)
     {"key": "royalty_marketing", "label": "Royalty & Marketing explained?", "hint": "check if agent explained royalty and marketing fees. Look for: 'royalty', '4 percent', '4%', '8 percent', '8%', 'marketing', 'monthly', 'sales pe', 'revenue share', 'net sales'. Mark true if royalty OR marketing fee was explained anywhere", "points": 5, "group": "Co-investment Model", "negative": False},
     {"key": "ground_floor_sqft", "label": "250-400 sqft ground floor requirement explained?", "hint": "check if agent explained the ground floor and square feet requirement. Look for: '250', '400', 'sqft', 'square feet', 'ground floor', 'area requirement', 'space', 'minimum area', 'shop size'. Mark true if area/sqft requirement was mentioned", "points": 5, "group": "Co-investment Model", "negative": False},
-    {"key": "biofrication_cost", "label": "25-20 Lakh Biofrication cost explained correctly?", "hint": "check if agent correctly explained the total investment of 25 lakh (or 20 lakh). Look for: '25 lakh', '20 lakh', 'investment', 'total cost', '10 lakh brand license', '15 lakh store setup', 'bifurcation', 'breakdown', 'kitna lagega'. Mark true if investment amount and its breakdown was explained", "points": 15, "group": "Co-investment Model", "negative": False},
+    {"key": "investment_amount_stated", "label": "Total investment amount (~30 Lakh) mentioned?", "hint": "check if agent mentioned the total investment figure anywhere - '30 lakh', '30L', 'total cost', 'total investment', 'kitna lagega'. Mark true if ANY total investment figure in the 28-32 lakh range was stated, even without a breakdown", "points": 8, "group": "Co-investment Model", "negative": False},
+    {"key": "investment_breakdown_explained", "label": "Investment bifurcation (brand license + store setup) explained?", "hint": "check if agent gave ANY breakdown or split of the investment into components - brand license fee, store setup cost, equipment, etc - in roughly any proportion. Look for two or more cost components mentioned, 'brand license', 'store setup', 'bifurcation', 'breakdown', 'split'. Mark true if a reasonable breakdown was given, even if exact numbers differ slightly from 10L+20L", "points": 7, "group": "Co-investment Model", "negative": False},
 
     # Group 4 — Wrong Information / False Commitment (25 pts) — NEGATIVE
     {"key": "no_guaranteed_roi", "label": "Did NOT promise guaranteed ROI/profit/fixed returns?", "hint": "check if agent promised guaranteed ROI, profit or fixed returns. If agent said things like 'guaranteed profit', 'fixed return', 'pakka munafa', '100% profit', 'assured returns' — mark FALSE. If agent did NOT make such promises — mark TRUE", "points": 5, "group": "False Commitment", "negative": True},
-    {"key": "no_wrong_investment", "label": "Did NOT understate investment (₹25L / ignored taxes)?", "hint": "check if agent understated the investment amount or ignored taxes. If agent said less than 25 lakh or did not mention taxes/GST when asked — mark FALSE. If agent correctly stated 25 lakh plus taxes — mark TRUE", "points": 5, "group": "False Commitment", "negative": True},
+    {"key": "no_wrong_investment", "label": "Did NOT understate the investment amount?", "hint": "check if agent stated a total investment figure clearly lower than the actual ~30 lakh figure to make it sound cheaper. Only mark FALSE if agent explicitly gave a materially lower total as the full cost. If agent simply did not bring up GST/taxes unprompted, that alone should NOT cause FALSE - only mark FALSE if the prospect directly asked about taxes and the agent gave a misleading answer. Default to TRUE unless investment was clearly understated", "points": 5, "group": "False Commitment", "negative": True},
     {"key": "no_reducing_involvement", "label": "Did NOT reduce involvement requirement (auto-pilot mode)?", "hint": "check if agent said business runs on auto-pilot or no time/effort needed. If agent said 'auto-pilot', 'khud chal jayega', 'no time needed', 'passive income', 'bina kaam ke' — mark FALSE. If agent correctly said time and effort is needed — mark TRUE", "points": 5, "group": "False Commitment", "negative": True},
     {"key": "no_guaranteed_sales", "label": "Did NOT promise guaranteed sales/revenue?", "hint": "check if agent promised guaranteed sales or revenue figures. If agent said 'guaranteed sales', 'pakki kamai', 'fixed revenue', 'X lakh per month guaranteed' — mark FALSE. If agent did NOT make such promises — mark TRUE", "points": 5, "group": "False Commitment", "negative": True},
     {"key": "no_guaranteed_launch", "label": "Did NOT promise guaranteed launch timeline/approvals?", "hint": "check if agent promised guaranteed launch date or approvals. If agent said 'guaranteed launch in X days', 'approval pakka milega', '100% open ho jayega' — mark FALSE. If agent did NOT make such promises — mark TRUE", "points": 5, "group": "False Commitment", "negative": True},
@@ -622,8 +623,10 @@ Respond ONLY with valid JSON in this exact format:
         model="openai/gpt-oss-120b",
         response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.1,
-        max_tokens=6000,
+        temperature=0,
+        max_tokens=8000,
+        reasoning_effort="low",
+        seed=42,
     )
     print(f"[scoring] finish_reason: {response.choices[0].finish_reason}")
     raw = response.choices[0].message.content.strip()
@@ -666,8 +669,10 @@ Respond ONLY with JSON:
             model="openai/gpt-oss-120b",
             response_format={"type": "json_object"},
             messages=[{"role": "user", "content": second_prompt}],
-            temperature=0.1,
-            max_tokens=1600,
+            temperature=0,
+            max_tokens=2000,
+            reasoning_effort="low",
+            seed=42,
         )
         raw2 = r2.choices[0].message.content.strip()
         if raw2.startswith("```"):
@@ -830,3 +835,41 @@ if __name__ == "__main__":
             print(f"\n⚠️  Flags:")
             for flag in report["flags"]:
                 print(f"   - {flag}")
+
+
+def score_call_checklist_majority(td, criteria_list, n_runs=3):
+    """Run checklist scoring n_runs times and take a majority vote per check,
+    to reduce the effect of run-to-run model non-determinism."""
+    all_results = []
+    for i in range(n_runs):
+        print(f"[majority-vote] Run {i+1}/{n_runs}...")
+        r = score_call_checklist(td, criteria_list)
+        all_results.append(r)
+
+    merged_checks = {}
+    for c in criteria_list:
+        key = c["key"]
+        votes = []
+        timestamps = []
+        for r in all_results:
+            check_data = r.get("checks", {}).get(key, {})
+            if isinstance(check_data, dict):
+                votes.append(bool(check_data.get("passed", False)))
+                timestamps.append(check_data.get("timestamp"))
+            else:
+                votes.append(bool(check_data))
+                timestamps.append(None)
+        true_count = sum(votes)
+        majority_passed = true_count > (len(votes) / 2)
+        chosen_ts = None
+        for v, ts in zip(votes, timestamps):
+            if v == majority_passed and ts:
+                chosen_ts = ts
+                break
+        merged_checks[key] = {"passed": majority_passed, "timestamp": chosen_ts}
+        if len(set(votes)) > 1:
+            print(f"[majority-vote] SPLIT on {key}: votes={votes} -> using {majority_passed}")
+
+    result = dict(all_results[0])
+    result["checks"] = merged_checks
+    return result
