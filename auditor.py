@@ -227,7 +227,7 @@ def extract_agent_segments(td, agent_speaker):
 
 # Users that stay on Sarvam
 SARVAM_USERS = {
-    
+    "salim@delightservices.in",
 }
 
 async def transcribe_audio(file_path, user_email=None):
