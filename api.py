@@ -49,6 +49,17 @@ FRANCHISE_USERS = {
 DASHBOARD_USERS = {
     "tauseef@delightservices.in": os.getenv("FRANCHISE_PASSWORD_TAUSEEF", "tauseef2026"),
 }
+
+# ── Franchise Maintenance Mode (temporary — toggle with flag file, remove after testing) ──
+FRANCHISE_MAINTENANCE_FLAG = Path("FRANCHISE_MAINTENANCE.flag")
+FRANCHISE_MAINTENANCE_BYPASS = {"musicbeats897@gmail.com"}  # test account — stays usable while maintenance is on
+def franchise_maintenance_active():
+    return FRANCHISE_MAINTENANCE_FLAG.exists()
+FRANCHISE_MAINTENANCE_HTML = """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AuditIQ — Maintenance</title>
+<style>body{font-family:'DM Sans',sans-serif;background:#080C12;color:#E8EDF5;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}
+.card{background:#0E1420;border:1px solid #1E2D45;border-radius:24px;padding:48px;max-width:420px}
+h1{font-size:20px;margin-bottom:12px}p{color:#6B7A99;font-size:14px;line-height:1.6}</style></head>
+<body><div class="card"><h1>Briefly Under Maintenance</h1><p>We're updating the franchise call scoring engine. Please check back shortly.</p></div></body></html>"""
 REPORTS_DIR = Path("reports")
 UPLOAD_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
@@ -829,18 +840,23 @@ async def dashboard(request: Request, session: str = Cookie(default=None)):
 async def franchise_dashboard(request: Request, session: str = Cookie(default=None)):
     # Check franchise password-based session cookie first
     franchise_session = request.cookies.get("franchise_session")
+    resolved_email = None
     if franchise_session:
-        user_email = verify_franchise_session(franchise_session)
-        if user_email:
-            return open("franchise_dashboard.html").read()
+        resolved_email = verify_franchise_session(franchise_session)
+        if not resolved_email:
+            return RedirectResponse(url="/franchise/login")
+    else:
+        # Fallback: magic-link token access
+        token = request.query_params.get("token") or request.headers.get("X-Session-Token") or session
+        if token:
+            user = verify_session_token(token)
+            if user and user.get("email") in FRANCHISE_CLIENTS:
+                resolved_email = user.get("email")
+    if not resolved_email:
         return RedirectResponse(url="/franchise/login")
-    # Fallback: magic-link token access
-    token = request.query_params.get("token") or request.headers.get("X-Session-Token") or session
-    if token:
-        user = verify_session_token(token)
-        if user and user.get("email") in FRANCHISE_CLIENTS:
-            return open("franchise_dashboard.html").read()
-    return RedirectResponse(url="/franchise/login")
+    if franchise_maintenance_active() and resolved_email not in FRANCHISE_MAINTENANCE_BYPASS:
+        return HTMLResponse(FRANCHISE_MAINTENANCE_HTML, status_code=503)
+    return open("franchise_dashboard.html").read()
 
 @app.post("/audit/franchise")
 async def audit_franchise_call(
@@ -855,6 +871,8 @@ async def audit_franchise_call(
         raise HTTPException(401, "Please sign in")
     if user.get("email") not in FRANCHISE_CLIENTS:
         raise HTTPException(403, "Not authorized")
+    if franchise_maintenance_active() and user.get("email") not in FRANCHISE_MAINTENANCE_BYPASS:
+        raise HTTPException(503, "Franchise portal is temporarily under maintenance. Please try again shortly.")
     if not agent_name.strip():
         raise HTTPException(400, "Agent name is required")
 
@@ -868,7 +886,7 @@ async def audit_franchise_call(
     # Duplicate prevention — check if same file was submitted in last 5 minutes
     import time as _time
     safe_filename_check = file.filename.replace(" ", "_")
-    recent_reports = sorted(Path("reports").glob("*.checklist.json"), reverse=True)[:10]
+    recent_reports = sorted(Path("reports").glob("*.checklist.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:10]
     for rf in recent_reports:
         try:
             age = _time.time() - rf.stat().st_mtime
@@ -891,13 +909,13 @@ async def audit_franchise_call(
         f.write(file_content)
 
     try:
-        from auditor import BURGER_SINGH_CRITERIA, score_call_checklist, generate_report_checklist
+        from auditor import BURGER_SINGH_CRITERIA, score_call_checklist_majority, generate_report_checklist
         from auditor import transcribe_audio, parse_transcript
         dg = await transcribe_audio(str(file_path), user_email=user["email"])
         td = parse_transcript(dg)
         if "error" in td:
             raise HTTPException(500, td["error"])
-        scores = score_call_checklist(td, BURGER_SINGH_CRITERIA)
+        scores = score_call_checklist_majority(td, BURGER_SINGH_CRITERIA, n_runs=5)
         report = generate_report_checklist(str(file_path), td, scores, BURGER_SINGH_CRITERIA)
     except HTTPException:
         raise
@@ -1608,6 +1626,8 @@ async def franchise_login_page():
 @app.post("/franchise/login")
 @limiter.limit("5/minute")
 async def franchise_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    if franchise_maintenance_active() and email not in FRANCHISE_MAINTENANCE_BYPASS:
+        raise HTTPException(503, "Franchise portal is temporarily under maintenance. Please try again shortly.")
     expected = FRANCHISE_USERS.get(email)
     if not expected or password != expected:
         raise HTTPException(401, "Invalid credentials")
