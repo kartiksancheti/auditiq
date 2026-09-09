@@ -8,7 +8,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-groq_client = Groq(api_key=GROQ_API_KEY)
+import httpx
+import socket
+_orig_getaddrinfo = socket.getaddrinfo
+def _ipv4_only_getaddrinfo(*args, **kwargs):
+    return [r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET]
+socket.getaddrinfo = _ipv4_only_getaddrinfo
+groq_client = Groq(
+    api_key=GROQ_API_KEY,
+    timeout=httpx.Timeout(60.0, connect=10.0),
+    max_retries=3,
+)
 
 DEFAULT_CRITERIA = """
 1. Greeting: Did the agent greet properly and introduce themselves?
@@ -457,7 +467,8 @@ Respond ONLY with valid JSON in this exact format:
 }}"""
 
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
+        response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
         max_tokens=1200,
@@ -608,11 +619,13 @@ Respond ONLY with valid JSON in this exact format:
 }}"""
 
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
+        response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=1500,
+        max_tokens=6000,
     )
+    print(f"[scoring] finish_reason: {response.choices[0].finish_reason}")
     raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
@@ -650,10 +663,11 @@ Respond ONLY with JSON:
 }}"""
 
         r2 = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
+            response_format={"type": "json_object"},
             messages=[{"role": "user", "content": second_prompt}],
             temperature=0.1,
-            max_tokens=800,
+            max_tokens=1600,
         )
         raw2 = r2.choices[0].message.content.strip()
         if raw2.startswith("```"):
