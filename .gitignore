@@ -18,3 +18,4 @@ franchise_recordings/
 *.bak-*
 *.backup
 reset.log
+debug_scripts/
