@@ -227,15 +227,13 @@ def extract_agent_segments(td, agent_speaker):
 
 # Users that stay on Sarvam
 SARVAM_USERS = {
-
+    "salim@delightservices.in",
 }
 
 # Users on Replicate-hosted WhisperX (GPU) - better Hindi/Hinglish accuracy, fast, cheap
 REPLICATE_WHISPERX_USERS = {
-    "salim@delightservices.in",
-    # See debug_scripts/hybrid_test1.log for the known issue (diarization unreliable
-    # on some mono/crosstalk-heavy telephony recordings, confirmed on both AssemblyAI
-    # and WhisperX). Re-enable per-user once fixed.
+    # Hybrid (AssemblyAI diarization + Replicate WhisperX text) is validated and working.
+    # Not active right now by choice - Salim is on Sarvam for now. Add email here to switch.
 }
 
 async def transcribe_audio(file_path, user_email=None):
