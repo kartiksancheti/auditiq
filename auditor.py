@@ -227,16 +227,221 @@ def extract_agent_segments(td, agent_speaker):
 
 # Users that stay on Sarvam
 SARVAM_USERS = {
+
+}
+
+# Users on Replicate-hosted WhisperX (GPU) - better Hindi/Hinglish accuracy, fast, cheap
+REPLICATE_WHISPERX_USERS = {
     "salim@delightservices.in",
+    # See debug_scripts/hybrid_test1.log for the known issue (diarization unreliable
+    # on some mono/crosstalk-heavy telephony recordings, confirmed on both AssemblyAI
+    # and WhisperX). Re-enable per-user once fixed.
 }
 
 async def transcribe_audio(file_path, user_email=None):
-    if user_email and user_email.lower() in SARVAM_USERS:
+    if user_email and user_email.lower() in REPLICATE_WHISPERX_USERS:
+        print(f"[1/3] Using Hybrid (AssemblyAI diarization + Replicate WhisperX text) for {user_email}")
+        return await _transcribe_hybrid_replicate_assemblyai(file_path)
+    elif user_email and user_email.lower() in SARVAM_USERS:
         print(f"[1/3] Using Sarvam for {user_email}")
         return await _transcribe_sarvam(file_path)
     else:
         print(f"[1/3] Using AssemblyAI for {user_email or 'unknown'}")
         return await _transcribe_assemblyai(file_path)
+
+
+async def _transcribe_replicate_whisperx(file_path):
+    import asyncio
+    import replicate as replicate_sdk
+
+    def run():
+        print(f"[replicate-whisperx] Transcribing: {file_path}")
+        client = replicate_sdk.Client(api_token=os.getenv("REPLICATE_API_TOKEN"), timeout=30)
+        model = client.models.get("victor-upmeet/whisperx-a100-80gb")
+        version = model.latest_version.id
+
+        with open(file_path, "rb") as f:
+            prediction = client.predictions.create(
+                version=version,
+                input={
+                    "audio_file": f,
+                    "diarization": True,
+                    "huggingface_access_token": os.getenv("HF_TOKEN"),
+                    "min_speakers": 2,
+                    "max_speakers": 2,
+                    "batch_size": 64,
+                    "temperature": 0,
+                    "align_output": False,
+                }
+            )
+
+        import time as _time
+        while prediction.status not in ("succeeded", "failed", "canceled"):
+            _time.sleep(2)
+            prediction.reload()
+
+        if prediction.status != "succeeded":
+            raise Exception(f"Replicate WhisperX failed: {prediction.error}")
+
+        output = prediction.output
+        segments = output.get("segments", []) if isinstance(output, dict) else output
+        print(f"[replicate-whisperx] Done. Language: {output.get('detected_language') if isinstance(output, dict) else 'n/a'}, segments: {len(segments)}")
+
+        entries = []
+        speaker_map = {}
+        for seg in segments:
+            spk = seg.get("speaker", "SPEAKER_00")
+            if spk not in speaker_map:
+                speaker_map[spk] = "0" if len(speaker_map) == 0 else "1"
+            text = (seg.get("text") or "").strip()
+            if not text:
+                continue
+            entries.append({
+                "speaker_id": speaker_map[spk],
+                "transcript": text,
+                "start_time_seconds": round(seg.get("start", 0), 1),
+                "end_time_seconds": round(seg.get("end", 0), 1),
+            })
+        return {"diarized_transcript": {"entries": entries}}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run)
+
+
+def has_repetition(text, min_repeats_single=4, min_repeats_multi=2):
+    """Detect Whisper-style hallucination loops - a single word or short phrase
+    repeated many times in a row (e.g. 'is is is is' or 'x y x y x y')."""
+    words = text.strip().split()
+    if len(words) < 3:
+        return False
+    i = 0
+    while i < len(words):
+        j = i + 1
+        while j < len(words) and words[j] == words[i]:
+            j += 1
+        if j - i >= min_repeats_single:
+            return True
+        i = j
+    for chunk_len in range(2, min(6, len(words) // 2) + 1):
+        for i in range(len(words) - chunk_len * (min_repeats_multi + 1) + 1):
+            chunk = words[i:i + chunk_len]
+            repeats = 1
+            j = i + chunk_len
+            while j + chunk_len <= len(words) and words[j:j + chunk_len] == chunk:
+                repeats += 1
+                j += chunk_len
+            if repeats >= min_repeats_multi + 1:
+                return True
+    return False
+
+
+async def _get_replicate_whisperx_words(file_path):
+    """Get word-level timestamps from Replicate WhisperX (aligned) - accurate text,
+    fine-grained enough to bucket into AssemblyAI's reliable turn boundaries."""
+    import asyncio
+    import replicate as replicate_sdk
+    import time as _time
+
+    def run():
+        print(f"[replicate-whisperx] Transcribing with word alignment: {file_path}")
+        client = replicate_sdk.Client(api_token=os.getenv("REPLICATE_API_TOKEN"), timeout=30)
+        model = client.models.get("victor-upmeet/whisperx-a100-80gb")
+        version = model.latest_version.id
+        with open(file_path, "rb") as f:
+            prediction = client.predictions.create(
+                version=version,
+                input={
+                    "audio_file": f,
+                    "diarization": False,
+                    "temperature": 0,
+                    "align_output": True,
+                    "batch_size": 64,
+                }
+            )
+        while prediction.status not in ("succeeded", "failed", "canceled"):
+            _time.sleep(2)
+            prediction.reload()
+        if prediction.status != "succeeded":
+            raise Exception(f"Replicate WhisperX failed: {prediction.error}")
+        output = prediction.output
+        segments = output.get("segments", []) if isinstance(output, dict) else output
+        words = []
+        for seg in segments:
+            seg_words = seg.get("words")
+            if seg_words:
+                for w in seg_words:
+                    if w.get("start") is None or w.get("end") is None:
+                        continue
+                    wt = (w.get("word") or "").strip()
+                    if wt:
+                        words.append({"word": wt, "start": w["start"], "end": w["end"]})
+            else:
+                text = (seg.get("text") or "").strip()
+                if text:
+                    words.append({"word": text, "start": seg.get("start", 0), "end": seg.get("end", 0)})
+        print(f"[replicate-whisperx] Got {len(words)} word-level tokens across {len(segments)} segments")
+        return words
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run)
+
+
+async def _transcribe_hybrid_replicate_assemblyai(file_path):
+    """AssemblyAI's utterance boundaries (reliable fine-grained turn-taking) + Replicate
+    WhisperX's word-level text (more accurate Hindi/Hinglish), bucketed together."""
+    import asyncio
+
+    aai_result, words = await asyncio.gather(
+        _transcribe_assemblyai(file_path),
+        _get_replicate_whisperx_words(file_path),
+    )
+    diar_entries = sorted(aai_result["diarized_transcript"]["entries"], key=lambda u: u["start_time_seconds"])
+    if not diar_entries:
+        return aai_result
+
+    buckets = [[] for _ in diar_entries]
+
+    def find_bucket_index(mid):
+        for i, u in enumerate(diar_entries):
+            if u["start_time_seconds"] <= mid <= u["end_time_seconds"]:
+                return i
+        best_i, best_dist = 0, float("inf")
+        for i, u in enumerate(diar_entries):
+            dist = min(abs(mid - u["start_time_seconds"]), abs(mid - u["end_time_seconds"]))
+            if dist < best_dist:
+                best_dist, best_i = dist, i
+        return best_i
+
+    for w in words:
+        mid = (w["start"] + w["end"]) / 2
+        buckets[find_bucket_index(mid)].append(w["word"])
+
+    merged = []
+    cur_spk, cur_texts, cur_start, prev_end = None, [], None, None
+    dropped = 0
+    for i, u in enumerate(diar_entries):
+        text = " ".join(buckets[i]).strip()
+        if not text:
+            continue
+        if has_repetition(text):
+            print(f"  [hybrid-v2] Dropped hallucinated bucket [{u['start_time_seconds']:.1f}s-{u['end_time_seconds']:.1f}s]: {text[:60]}...")
+            dropped += 1
+            continue
+        spk = u["speaker_id"]
+        if spk != cur_spk:
+            if cur_texts:
+                merged.append({"speaker_id": cur_spk, "transcript": " ".join(cur_texts),
+                                "start_time_seconds": cur_start, "end_time_seconds": prev_end})
+            cur_spk, cur_texts, cur_start = spk, [text], u["start_time_seconds"]
+        else:
+            cur_texts.append(text)
+        prev_end = u["end_time_seconds"]
+    if cur_texts:
+        merged.append({"speaker_id": cur_spk, "transcript": " ".join(cur_texts),
+                        "start_time_seconds": cur_start, "end_time_seconds": prev_end})
+
+    print(f"[hybrid-v2] {len(diar_entries)} AssemblyAI turns -> merged into {len(merged)} speaker blocks, dropped {dropped} hallucinated buckets")
+    return {"diarized_transcript": {"entries": merged}}
 
 
 async def _transcribe_assemblyai(file_path):
