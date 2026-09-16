@@ -227,6 +227,11 @@ def extract_agent_segments(td, agent_speaker):
 
 # Users that stay on Sarvam
 SARVAM_USERS = {
+    # Kept empty - Sarvam code stays available as a manual fallback if Soniox has issues.
+    # Add an email here temporarily to route that user back to Sarvam.
+}
+
+SONIOX_USERS = {
     "salim@delightservices.in",
 }
 
@@ -243,6 +248,9 @@ async def transcribe_audio(file_path, user_email=None):
     elif user_email and user_email.lower() in SARVAM_USERS:
         print(f"[1/3] Using Sarvam for {user_email}")
         return await _transcribe_sarvam(file_path)
+    elif user_email and user_email.lower() in SONIOX_USERS:
+        print(f"[1/3] Using Soniox for {user_email}")
+        return await _transcribe_soniox(file_path)
     else:
         print(f"[1/3] Using AssemblyAI for {user_email or 'unknown'}")
         return await _transcribe_assemblyai(file_path)
@@ -440,6 +448,82 @@ async def _transcribe_hybrid_replicate_assemblyai(file_path):
 
     print(f"[hybrid-v2] {len(diar_entries)} AssemblyAI turns -> merged into {len(merged)} speaker blocks, dropped {dropped} hallucinated buckets")
     return {"diarized_transcript": {"entries": merged}}
+
+
+async def _transcribe_soniox(file_path):
+    import asyncio
+    import httpx
+    import time as _time
+
+    API_KEY = os.getenv("SONIOX_API_KEY")
+    BASE_URL = "https://api.soniox.com"
+    HEADERS = {"Authorization": f"Bearer {API_KEY}"}
+
+    def run():
+        print(f"[soniox] Transcribing: {file_path}")
+        with open(file_path, "rb") as f:
+            resp = httpx.post(f"{BASE_URL}/v1/files", headers=HEADERS, files={"file": f}, timeout=120)
+        resp.raise_for_status()
+        file_id = resp.json()["id"]
+
+        resp = httpx.post(
+            f"{BASE_URL}/v1/transcriptions",
+            headers=HEADERS,
+            json={
+                "file_id": file_id,
+                "model": "stt-async-v5",
+                "language_hints": ["hi", "en"],
+                "enable_language_identification": True,
+                "enable_speaker_diarization": True,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        job_id = resp.json()["id"]
+
+        while True:
+            resp = httpx.get(f"{BASE_URL}/v1/transcriptions/{job_id}", headers=HEADERS, timeout=30)
+            resp.raise_for_status()
+            status = resp.json().get("status")
+            if status in ("completed", "error"):
+                break
+            _time.sleep(2)
+
+        if status == "error":
+            raise Exception(f"Soniox transcription failed: {resp.json()}")
+
+        resp = httpx.get(f"{BASE_URL}/v1/transcriptions/{job_id}/transcript", headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        tokens = resp.json().get("tokens", [])
+        print(f"[soniox] Done. {len(tokens)} tokens.")
+
+        entries = []
+        cur_spk, cur_text, cur_start, prev_end = None, [], None, None
+        speaker_map = {}
+        for tok in tokens:
+            raw_spk = tok.get("speaker")
+            if raw_spk not in speaker_map:
+                speaker_map[raw_spk] = "0" if len(speaker_map) == 0 else "1"
+            spk = speaker_map[raw_spk]
+            text = tok.get("text", "")
+            start = tok.get("start_ms", 0) / 1000
+            end = tok.get("end_ms", start * 1000) / 1000
+            if spk != cur_spk:
+                if cur_text:
+                    entries.append({"speaker_id": cur_spk, "transcript": "".join(cur_text).strip(),
+                                     "start_time_seconds": cur_start, "end_time_seconds": prev_end})
+                cur_spk, cur_text, cur_start = spk, [text], start
+            else:
+                cur_text.append(text)
+            prev_end = end
+        if cur_text:
+            entries.append({"speaker_id": cur_spk, "transcript": "".join(cur_text).strip(),
+                             "start_time_seconds": cur_start, "end_time_seconds": prev_end})
+
+        return {"diarized_transcript": {"entries": entries}}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run)
 
 
 async def _transcribe_assemblyai(file_path):
