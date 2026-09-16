@@ -921,6 +921,8 @@ async def audit_franchise_call(
         raise
     except Exception as e:
         print(f"[audit error - internal only] {e}")
+        asyncio.create_task(send_admin_alert_email(str(e), user["email"], context=f"Franchise audit, file={file.filename}"))
+        asyncio.create_task(send_telegram_alert(str(e), user["email"], context=f"Franchise audit, file={file.filename}"))
         raise HTTPException(500, "Audit failed. Please try again in a few minutes. If this keeps happening, contact support.")
 
     updated = increment_call_count(user["email"])
@@ -1192,6 +1194,77 @@ async def send_to_telegram_and_delete(file_path: str, file_id: str, report: dict
         except Exception as e:
             print(f"❌ Delete failed: {e}")
 
+async def send_telegram_alert(error_detail: str, user_email: str, context: str = ""):
+    import httpx
+    from datetime import datetime as _dt
+
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not bot_token or not chat_id:
+        print("[telegram-alert] Telegram not configured, skipping")
+        return
+
+    timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    text = (
+        f"\U0001F6A8 AuditIQ Alert: Audit Failed\n"
+        f"\U0001F553 {timestamp}\n"
+        f"\U0001F464 User: {user_email}\n"
+        f"\U0001F4CB Context: {context}\n"
+        f"\u26A0\uFE0F Error: {error_detail[:500]}"
+    )
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                data={"chat_id": chat_id, "text": text},
+                timeout=15,
+            )
+        print(f"[telegram-alert] Sent for failure: {user_email}")
+    except Exception as e:
+        print(f"[telegram-alert] FAILED to send: {e}")
+
+
+async def send_admin_alert_email(error_detail: str, user_email: str, context: str = ""):
+    import aiosmtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from datetime import datetime as _dt
+
+    ALERT_EMAIL = "kartiksancheti33@gmail.com"
+    smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "465"))
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+
+    if not smtp_user or not smtp_password:
+        print("[alert-email] SMTP not configured, skipping alert")
+        return
+
+    timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"AuditIQ Alert: Audit failed for {user_email}"
+    msg["From"] = f"AuditIQ Alerts <{smtp_user}>"
+    msg["To"] = ALERT_EMAIL
+
+    html = f"""<html><body style="font-family:Arial,sans-serif;">
+<h2 style="color:#c0392b;">Audit Failed</h2>
+<p><b>Time:</b> {timestamp}</p>
+<p><b>User:</b> {user_email}</p>
+<p><b>Context:</b> {context}</p>
+<p><b>Error detail:</b></p>
+<pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap;font-size:13px;">{error_detail}</pre>
+</body></html>"""
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        async with aiosmtplib.SMTP(hostname=smtp_host, port=smtp_port, use_tls=True) as smtp:
+            await smtp.login(smtp_user, smtp_password)
+            await smtp.send_message(msg)
+        print(f"[alert-email] Sent for failure: {user_email}")
+    except Exception as e:
+        print(f"[alert-email] FAILED to send alert email: {e}")
+
+
 # ── Audit ───────────────────────────────────────────────────────────────────────
 
 @app.post("/audit")
@@ -1232,6 +1305,8 @@ async def audit_single_call(
         report = await audit_call(str(file_path), criteria, context, save_report=False, user_email=user["email"])
     except Exception as e:
         print(f"[audit error - internal only] {e}")
+        asyncio.create_task(send_admin_alert_email(str(e), user["email"], context=f"Standard audit, file={file.filename}"))
+        asyncio.create_task(send_telegram_alert(str(e), user["email"], context=f"Standard audit, file={file.filename}"))
         raise HTTPException(500, "Audit failed. Please try again in a few minutes. If this keeps happening, contact support.")
 
     updated = increment_call_count(user["email"])
