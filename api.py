@@ -920,7 +920,8 @@ async def audit_franchise_call(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Audit failed: {str(e)}")
+        print(f"[audit error - internal only] {e}")
+        raise HTTPException(500, "Audit failed. Please try again in a few minutes. If this keeps happening, contact support.")
 
     updated = increment_call_count(user["email"])
     # Create human-readable display name
@@ -1230,7 +1231,8 @@ async def audit_single_call(
     try:
         report = await audit_call(str(file_path), criteria, context, save_report=False, user_email=user["email"])
     except Exception as e:
-        raise HTTPException(500, f"Audit failed: {str(e)}")
+        print(f"[audit error - internal only] {e}")
+        raise HTTPException(500, "Audit failed. Please try again in a few minutes. If this keeps happening, contact support.")
 
     updated = increment_call_count(user["email"])
     calls_used = updated["calls_used"]
